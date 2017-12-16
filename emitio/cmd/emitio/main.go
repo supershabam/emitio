@@ -15,7 +15,9 @@ import (
 
 	"github.com/dgraph-io/badger"
 	"github.com/pkg/errors"
+	"github.com/supershabam/emitio/emitio/pb"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
 )
 
 type ingress struct {
@@ -28,6 +30,8 @@ type message struct {
 	fingerprint string
 	line        string
 }
+
+var _ pb.EmitioServer = &server{}
 
 type server struct{}
 
@@ -163,6 +167,10 @@ func (s *server) run(ctx context.Context) error {
 	return nil
 }
 
+func (s *server) ReadRows(ctx context.Context, req *pb.ReadRowsRequest) (*pb.ReadRowsReply, error) {
+	return nil, errors.New("not implemented")
+}
+
 func main() {
 	// --origin pod=$(pod_name)
 	// --origin namespace=$(k8s_namespace)
@@ -207,7 +215,20 @@ func main() {
 		os.Exit(1)
 	}()
 	s := &server{}
-	err := s.run(ctx)
+	eg, ctx := errgroup.WithContext(ctx)
+	eg.Go(func() error {
+		return s.run(ctx)
+	})
+	eg.Go(func() error {
+		lis, err := net.Listen("tcp", ":9090")
+		if err != nil {
+			return err
+		}
+		grpcs := grpc.NewServer()
+		pb.RegisterEmitioServer(grpcs, s)
+		return grpcs.Serve(lis)
+	})
+	err := eg.Wait()
 	if err != nil {
 		panic(err)
 	}
