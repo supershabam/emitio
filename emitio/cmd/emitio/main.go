@@ -29,61 +29,21 @@ type message struct {
 	line        string
 }
 
-func main() {
-	// --origin pod=$(pod_name)
-	// --origin namespace=$(k8s_namespace)
-	// --origin datacenter=nyc2
-	// --ingress tail:///var/log/message
-	// --ingress syslog+udp://0.0.0.0:514/?my_tag=value
-	// --ingress ndjson+stdin:///
-	// --ingress statsd+udp://0.0.0.0:9001/?region=nyc2#application=something
-	// --ingress tail:///var/log/mongodb/mongodb.log#hint=mongodb-v3.18
-	// --ingress opentracing+udp://0.0.0.0:9002/
-	// --forward https://ingress.emit.io/
-	// --listen 0.0.0.0:8080
+type server struct{}
 
-	/*
-		TODO listen on tcp (easier for me to understand) and write each payload into
-		the buffer with a "${fingerprint}:${seq}" and TTL of 5m
-	*/
-	// origin := map[string]string{
-	// 	"pod":        "some-pod",
-	// 	"namespace":  "production",
-	// 	"datacenter": "nyc2",
-	// }
-	// ingressi := []ingress{
-	// 	{
-	// 		raw: "tail:///var/log/message",
-	// 	}
-	// }
-	// u, err := url.Parse("mongodb-v3.18+tail:///var/log/mongodb/mongodb.log")
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// fmt.Println(u.String())
-
-	// set up context
-	ctx, cancel := context.WithCancel(context.Background())
-	term := make(chan os.Signal, 1)
-	signal.Notify(term, os.Interrupt)
-	go func() {
-		<-term
-		cancel()
-		<-term
-		os.Exit(1)
-	}()
+func (s *server) run(ctx context.Context) error {
 	eg, ctx := errgroup.WithContext(ctx)
 	// set up badger
 	opts := badger.DefaultOptions
 	dir, err := ioutil.TempDir("", "emitio")
 	if err != nil {
-		panic(err)
+		return err
 	}
 	opts.Dir = dir
 	opts.ValueDir = dir
 	db, err := badger.Open(opts)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	defer db.Close()
 	// set up output channel
@@ -106,7 +66,7 @@ func main() {
 	// set up listener
 	l, err := net.Listen("tcp", ":9009")
 	if err != nil {
-		panic(err)
+		return err
 	}
 	eg.Go(func() error {
 		<-ctx.Done()
@@ -197,7 +157,58 @@ func main() {
 	}()
 	err = eg.Wait()
 	if err != nil {
-		panic(err)
+		return err
 	}
 	close(ch)
+	return nil
+}
+
+func main() {
+	// --origin pod=$(pod_name)
+	// --origin namespace=$(k8s_namespace)
+	// --origin datacenter=nyc2
+	// --ingress tail:///var/log/message
+	// --ingress syslog+udp://0.0.0.0:514/?my_tag=value
+	// --ingress ndjson+stdin:///
+	// --ingress statsd+udp://0.0.0.0:9001/?region=nyc2#application=something
+	// --ingress tail:///var/log/mongodb/mongodb.log#hint=mongodb-v3.18
+	// --ingress opentracing+udp://0.0.0.0:9002/
+	// --forward https://ingress.emit.io/
+	// --listen 0.0.0.0:8080
+
+	/*
+		TODO listen on tcp (easier for me to understand) and write each payload into
+		the buffer with a "${fingerprint}:${seq}" and TTL of 5m
+	*/
+	// origin := map[string]string{
+	// 	"pod":        "some-pod",
+	// 	"namespace":  "production",
+	// 	"datacenter": "nyc2",
+	// }
+	// ingressi := []ingress{
+	// 	{
+	// 		raw: "tail:///var/log/message",
+	// 	}
+	// }
+	// u, err := url.Parse("mongodb-v3.18+tail:///var/log/mongodb/mongodb.log")
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// fmt.Println(u.String())
+
+	// set up context
+	ctx, cancel := context.WithCancel(context.Background())
+	term := make(chan os.Signal, 1)
+	signal.Notify(term, os.Interrupt)
+	go func() {
+		<-term
+		cancel()
+		<-term
+		os.Exit(1)
+	}()
+	s := &server{}
+	err := s.run(ctx)
+	if err != nil {
+		panic(err)
+	}
 }

@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+service Emitio {
+  rpc ReadRows (ReadRowsRequest) returns (ReadRowsReply) {}
+}
+
+message ReadRowsRequest {
+    bytes start = 1;
+    bytes end = 2;
+}
+
+message ReadRowsReply {
+    message Row {
+        bytes row = 1;
+        bytes value = 2;
+    }
+    repeated Row rows = 1;
+}
