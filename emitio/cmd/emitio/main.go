@@ -33,7 +33,9 @@ type message struct {
 
 var _ pb.EmitioServer = &server{}
 
-type server struct{}
+type server struct {
+	db *badger.DB
+}
 
 func (s *server) run(ctx context.Context) error {
 	eg, ctx := errgroup.WithContext(ctx)
@@ -49,6 +51,7 @@ func (s *server) run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	s.db = db
 	defer db.Close()
 	// set up output channel
 	ch := make(chan message)
@@ -168,7 +171,39 @@ func (s *server) run(ctx context.Context) error {
 }
 
 func (s *server) ReadRows(ctx context.Context, req *pb.ReadRowsRequest) (*pb.ReadRowsReply, error) {
-	return nil, errors.New("not implemented")
+	reply := &pb.ReadRowsReply{
+		Rows: []*pb.ReadRowsReply_Row{},
+	}
+	err := s.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		it := txn.NewIterator(opts)
+		it.Seek(req.Start)
+		for {
+			if !it.Valid() {
+				break
+			}
+			item := it.Item()
+			if len(req.End) > 0 && bytes.Compare(item.Key(), req.End) != -1 {
+				break
+			}
+			value, err := item.Value()
+			if err != nil {
+				return err
+			}
+			valueCopy := make([]byte, len(value))
+			copy(valueCopy, value)
+			reply.Rows = append(reply.Rows, &pb.ReadRowsReply_Row{
+				Row:   item.Key(),
+				Value: valueCopy,
+			})
+			it.Next()
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return reply, nil
 }
 
 func main() {
