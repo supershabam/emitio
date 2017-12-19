@@ -205,7 +205,11 @@ func main() {
 	// --forward https://ingress.emit.io/
 	// --listen 0.0.0.0:8080
 	ctx := context.TODO()
-	c := &pkg.Controller{}
+	c := &pkg.Controller{
+		Origin: map[string]string{
+			"hostname": "somehost",
+		},
+	}
 	err := c.Run(ctx, []string{
 		"syslog+udp://0.0.0.0:9007",
 		"syslog+udp://0.0.0.0:9008",

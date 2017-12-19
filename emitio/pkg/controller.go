@@ -7,7 +7,9 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-type Controller struct{}
+type Controller struct {
+	Origin map[string]string
+}
 
 func (c *Controller) Run(ctx context.Context, uris []string) error {
 	ingresses := make([]Ingresser, 0, len(uris))
@@ -29,6 +31,12 @@ func (c *Controller) Run(ctx context.Context, uris []string) error {
 			case msg, active := <-out:
 				if !active {
 					return nil
+				}
+				// set the controller's origin tags on message but don't override anything
+				for k, v := range c.Origin {
+					if _, ok := msg.Origin[k]; !ok {
+						msg.Origin[k] = v
+					}
 				}
 				fmt.Printf("msg=%+v\n", msg)
 			}
