@@ -1,10 +1,8 @@
 package pkg
 
 import (
-	"bytes"
 	"context"
 	"net"
-	"strconv"
 	"strings"
 
 	"golang.org/x/sync/errgroup"
@@ -13,7 +11,7 @@ import (
 var _ Ingresser = &UDP{}
 
 type UDP struct {
-	network, addr string
+	network, addr, uri string
 }
 
 func (u *UDP) Ingress(ctx context.Context) (<-chan Message, Wait) {
@@ -33,28 +31,20 @@ func (u *UDP) Ingress(ctx context.Context) (<-chan Message, Wait) {
 		for {
 			nr, _, err := pc.ReadFrom(buf)
 			if nr > 0 {
-				for {
-					idx := bytes.IndexByte(buf, ' ')
-					if idx == -1 {
-						break
-					}
-					u, err := strconv.ParseUint(string(buf[:idx]), 10, 0)
-					if err != nil {
-						return err
-					}
-					msg := Message{
-						Origin: map[string]string{
-							"ingress": "syslog+udp://TODO",
-						},
-						What: map[string]interface{}{
-							"message": buf[:idx][:u],
-						},
-					}
-					select {
-					case <-ctx.Done():
-						return nil
-					case ch <- msg:
-					}
+				message := make([]byte, nr)
+				copy(message, buf[:nr])
+				msg := Message{
+					Origin: map[string]string{
+						"ingress": u.uri,
+					},
+					What: map[string]interface{}{
+						"message": message,
+					},
+				}
+				select {
+				case <-ctx.Done():
+					return nil
+				case ch <- msg:
 				}
 			}
 			if err != nil {

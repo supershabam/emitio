@@ -27,6 +27,7 @@ func ParseIngress(uri string) (Ingresser, error) {
 		i := &UDP{
 			network: "udp",
 			addr:    u.Host,
+			uri:     uri,
 		}
 		return i, nil
 	}
