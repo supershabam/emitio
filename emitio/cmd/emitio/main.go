@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/supershabam/emitio/emitio/pkg"
 )
@@ -206,15 +205,11 @@ func main() {
 	// --forward https://ingress.emit.io/
 	// --listen 0.0.0.0:8080
 	ctx := context.TODO()
-	i, err := pkg.ParseIngress("syslog+udp://0.0.0.0:9007/")
-	if err != nil {
-		panic(err)
-	}
-	ch, wait := i.Ingress(ctx)
-	for msg := range ch {
-		fmt.Printf("msg=%+v\n", msg)
-	}
-	err = wait()
+	c := &pkg.Controller{}
+	err := c.Run(ctx, []string{
+		"syslog+udp://0.0.0.0:9007",
+		"syslog+udp://0.0.0.0:9008",
+	})
 	if err != nil {
 		panic(err)
 	}
