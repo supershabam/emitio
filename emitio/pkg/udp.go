@@ -57,3 +57,7 @@ func (u *UDP) Ingress(ctx context.Context) (<-chan Message, Wait) {
 	})
 	return ch, eg.Wait
 }
+
+func (u *UDP) Name() string {
+	return u.uri
+}

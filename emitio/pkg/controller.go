@@ -1,10 +1,13 @@
 package pkg
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"io/ioutil"
+	"strconv"
 	"time"
 
 	"github.com/dgraph-io/badger"
@@ -61,8 +64,8 @@ func (c *Controller) Run(ctx context.Context, uris []string) error {
 				// TODO batch these together
 				db.Update(func(txn *badger.Txn) error {
 					ingress := msg.Origin["ingress"]
-					seq := seqs[ingress]
 					seqs[ingress]++
+					seq := seqs[ingress]
 					key := []byte(fmt.Sprintf("%s:%08X", ingress, seq))
 					val, err := json.Marshal(msg)
 					if err != nil {
@@ -74,8 +77,64 @@ func (c *Controller) Run(ctx context.Context, uris []string) error {
 			}
 		}
 	})
+	// processing function
 	eg.Go(func() error {
-		t := time.NewTicker(time.Second * 10)
+		t := time.NewTicker(time.Second)
+		defer t.Stop()
+		lasts := map[string]uint64{}
+		fseqs := map[string]uint64{}
+		lua := ""
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-t.C:
+				for _, ingress := range ingresses {
+					name := ingress.Name()
+					last := lasts[name]
+					h := fnv.New64a()
+					h.Write([]byte(name))
+					h.Write([]byte(lua))
+					fingerprint := fmt.Sprintf("%0X", h.Sum(nil))
+					err := db.Update(func(txn *badger.Txn) error {
+						opts := badger.DefaultIteratorOptions
+						opts.PrefetchSize = 10
+						it := txn.NewIterator(opts)
+						start := append([]byte(fmt.Sprintf("%s:%08X", name, last)), 0x00)
+						prefix := []byte(fmt.Sprintf("%s:", name))
+						for it.Seek(start); it.ValidForPrefix(prefix); it.Next() {
+							item := it.Item()
+							k := item.Key()
+							parts := bytes.Split(k, []byte{':'})
+							seq, err := strconv.ParseUint(string(parts[len(parts)-1]), 16, 0)
+							if err != nil {
+								return err
+							}
+							lasts[name] = seq
+							v, err := item.Value()
+							if err != nil {
+								return err
+							}
+							fseqs[string(fingerprint)]++
+							fseq := fseqs[string(fingerprint)]
+							key := []byte(fmt.Sprintf("%s:%08X", fingerprint, fseq))
+							val := []byte(`{"mutated":` + string(v) + `}`)
+							err = txn.SetWithTTL(key, val, time.Minute)
+							if err != nil {
+								return err
+							}
+						}
+						return nil
+					})
+					if err != nil {
+						return err
+					}
+				}
+			}
+		}
+	})
+	eg.Go(func() error {
+		t := time.NewTicker(time.Second * 2)
 		defer t.Stop()
 		for {
 			select {

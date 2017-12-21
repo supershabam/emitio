@@ -15,6 +15,7 @@ type Message struct {
 
 type Ingresser interface {
 	Ingress(ctx context.Context) (<-chan Message, Wait)
+	Name() string
 }
 
 func ParseIngress(uri string) (Ingresser, error) {
