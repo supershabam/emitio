@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"fmt"
 
+	"github.com/pkg/errors"
 	"github.com/supershabam/emitio/emitio/pkg"
+	lua "github.com/yuin/gopher-lua"
 )
 
 // type ingress struct {
@@ -192,6 +195,64 @@ import (
 // 	return reply, nil
 // }
 
+func process(in []byte) ([][]byte, error) {
+	L := lua.NewState(lua.Options{SkipOpenLibs: true})
+	defer L.Close()
+	for _, pair := range []struct {
+		n string
+		f lua.LGFunction
+	}{
+		{lua.LoadLibName, lua.OpenPackage}, // Must be first
+		{lua.BaseLibName, lua.OpenBase},
+		{lua.TabLibName, lua.OpenTable},
+	} {
+		if err := L.CallByParam(lua.P{
+			Fn:      L.NewFunction(pair.f),
+			NRet:    0,
+			Protect: true,
+		}, lua.LString(pair.n)); err != nil {
+			return nil, errors.Wrap(err, "loading lua module")
+		}
+	}
+	const program = `
+function transform (input)
+	return {"one", "two"}
+end
+`
+	if err := L.DoString(program); err != nil {
+		return nil, errors.Wrap(err, "executing lua string")
+	}
+	if err := L.CallByParam(lua.P{
+		Fn:      L.GetGlobal("transform"),
+		NRet:    1,
+		Protect: true,
+	}, lua.LString(in)); err != nil {
+		return nil, errors.Wrap(err, "calling transform")
+	}
+	ret := L.Get(-1) // returned value
+	L.Pop(1)         // remove received value
+	t, ok := ret.(*lua.LTable)
+	if !ok {
+		return nil, errors.New("expected return value to be string")
+	}
+	lines := [][]byte{}
+	var outerErr error
+	t.ForEach(func(_, v lua.LValue) {
+		if outerErr != nil {
+			return
+		}
+		str, ok := v.(lua.LString)
+		if !ok {
+			outerErr = errors.New("expected table entry to be string")
+		}
+		lines = append(lines, []byte(str))
+	})
+	if outerErr != nil {
+		return nil, outerErr
+	}
+	return lines, nil
+}
+
 func main() {
 	// --origin pod=$(pod_name)
 	// --origin namespace=$(k8s_namespace)
@@ -204,13 +265,20 @@ func main() {
 	// --ingress opentracing+udp://0.0.0.0:9002/
 	// --forward https://ingress.emit.io/
 	// --listen 0.0.0.0:8080
+
+	out, err := process([]byte("hi"))
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("out=%s\n", out)
+
 	ctx := context.TODO()
 	c := &pkg.Controller{
 		Origin: map[string]string{
 			"hostname": "somehost",
 		},
 	}
-	err := c.Run(ctx, []string{
+	err = c.Run(ctx, []string{
 		"syslog+udp://0.0.0.0:9007",
 		"syslog+udp://0.0.0.0:9008",
 	})

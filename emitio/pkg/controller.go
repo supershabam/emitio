@@ -12,11 +12,70 @@ import (
 
 	"github.com/dgraph-io/badger"
 	"github.com/pkg/errors"
+	lua "github.com/yuin/gopher-lua"
 	"golang.org/x/sync/errgroup"
 )
 
 type Controller struct {
 	Origin map[string]string
+}
+
+func (c *Controller) process(in []byte) ([][]byte, error) {
+	L := lua.NewState(lua.Options{SkipOpenLibs: true})
+	defer L.Close()
+	for _, pair := range []struct {
+		n string
+		f lua.LGFunction
+	}{
+		{lua.LoadLibName, lua.OpenPackage}, // Must be first
+		{lua.BaseLibName, lua.OpenBase},
+		{lua.TabLibName, lua.OpenTable},
+	} {
+		if err := L.CallByParam(lua.P{
+			Fn:      L.NewFunction(pair.f),
+			NRet:    0,
+			Protect: true,
+		}, lua.LString(pair.n)); err != nil {
+			return nil, errors.Wrap(err, "loading lua module")
+		}
+	}
+	const program = `
+function transform(input)
+	return {"one", input}
+end
+`
+	if err := L.DoString(program); err != nil {
+		return nil, errors.Wrap(err, "executing lua string")
+	}
+	if err := L.CallByParam(lua.P{
+		Fn:      L.GetGlobal("transform"),
+		NRet:    1,
+		Protect: true,
+	}, lua.LString(in)); err != nil {
+		return nil, errors.Wrap(err, "calling transform")
+	}
+	ret := L.Get(-1) // returned value
+	L.Pop(1)         // remove received value
+	t, ok := ret.(*lua.LTable)
+	if !ok {
+		return nil, errors.New("expected return value to be string")
+	}
+	lines := [][]byte{}
+	var outerErr error
+	t.ForEach(func(_, v lua.LValue) {
+		if outerErr != nil {
+			return
+		}
+		str, ok := v.(lua.LString)
+		if !ok {
+			outerErr = errors.New("expected table entry to be string")
+		}
+		lines = append(lines, []byte(str))
+	})
+	if outerErr != nil {
+		return nil, outerErr
+	}
+	return lines, nil
 }
 
 func (c *Controller) Run(ctx context.Context, uris []string) error {
@@ -115,13 +174,18 @@ func (c *Controller) Run(ctx context.Context, uris []string) error {
 							if err != nil {
 								return err
 							}
-							fseqs[string(fingerprint)]++
-							fseq := fseqs[string(fingerprint)]
-							key := []byte(fmt.Sprintf("%s:%08X", fingerprint, fseq))
-							val := []byte(`{"mutated":` + string(v) + `}`)
-							err = txn.SetWithTTL(key, val, time.Minute)
+							vals, err := c.process(v)
 							if err != nil {
 								return err
+							}
+							for _, val := range vals {
+								fseqs[string(fingerprint)]++
+								fseq := fseqs[string(fingerprint)]
+								key := []byte(fmt.Sprintf("%s:%08X", fingerprint, fseq))
+								err = txn.SetWithTTL(key, val, time.Minute)
+								if err != nil {
+									return err
+								}
 							}
 						}
 						return nil
