@@ -38,7 +38,7 @@ func (u *UDP) Ingress(ctx context.Context) (<-chan Message, Wait) {
 						"ingress": u.uri,
 					},
 					What: map[string]interface{}{
-						"message": message,
+						"message": string(message),
 					},
 				}
 				select {
