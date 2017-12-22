@@ -15,13 +15,77 @@ import (
 */
 import "C"
 
+/*
+lua reference http://pgl.yoyo.org/luai/i/lua_pushlstring
+*/
+
 func main() {
 	L := NewState()
 	defer L.Close()
 	L.OpenLibs()
-
-	L.LoadString(`print("Hello World!")`)
+	C.lua_createtable(L.state, 0, 0)
+	t := map[string]string{
+		"hello": "there",
+		"my":    "goodbuddy",
+	}
+	for k, v := range t {
+		cs := C.CString(v)
+		C.lua_pushstring(L.state, cs)
+		C.free(unsafe.Pointer(cs))
+		cs = C.CString(k)
+		C.lua_setfield(L.state, -2, cs)
+		C.free(unsafe.Pointer(cs))
+	}
+	str := "a"
+	cs := C.CString(str)
+	C.lua_setfield(L.state, C.LUA_GLOBALSINDEX, cs)
+	C.free(unsafe.Pointer(cs))
+	L.LoadString(`
+	for key,value in pairs(a) do 
+		print(key,value) 
+	end
+`)
 	L.Run()
+
+	// 	L.LoadString(`
+	// local obs_
+	// function _G.a_x()
+	// 	obs_ = "some text value"
+	// end
+
+	// function _G.a_get_obs()
+	// 	return obs_
+	// end
+	// `)
+	// cs := C.CString("say")
+	// defer C.free(unsafe.Pointer(cs))
+	// C.lua_setfield(L.state, C.LUA_GLOBALSINDEX, cs)
+	// time.AfterFunc(time.Second, func() {
+	// 	L.Close()
+	// })
+	// str := "hi"
+	// cs := C.CString(str)
+	// C.lua_pushlstring(L.state, cs, C.size_t(len(str)))
+	// C.free(unsafe.Pointer(cs))
+	// 	L.LoadString(`
+	// print("this is outside my function")
+	// return function(input)
+	// 	print(input)
+	// end
+	// `)
+	// 	str := "my_function"
+	// 	cs := C.CString(str)
+	// 	C.lua_setfield(L.state, C.LUA_GLOBALSINDEX, cs)
+	// 	C.free(unsafe.Pointer(cs))
+	// L.LoadString(`	print("greetings ")`)
+	// arg1 := "from go"
+	// cs := C.CString(arg1)
+	// C.lua_pushstring(L.state, cs)
+	// C.free(unsafe.Pointer(cs))
+	// if C.lua_pcall(L.state, 1, 0, 0) != 0 {
+	// 	panic(L.errorString())
+	// }
+	// L.Run()
 }
 
 // LuaStatePtr is a type to respresent `struct lua_State`
