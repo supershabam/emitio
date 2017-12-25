@@ -41,7 +41,7 @@ func (c *Controller) process(in []byte) ([][]byte, error) {
 	}
 	const program = `
 function transform(input)
-	return {"one", input}
+	return {"one", input }
 end
 `
 	if err := L.DoString(program); err != nil {
