@@ -32,6 +32,18 @@
   version = "v0.8.0"
 
 [[projects]]
+  name = "github.com/satori/go.uuid"
+  packages = ["."]
+  revision = "879c5887cd475cd7864858769793b2ceb0d44feb"
+  version = "v1.1.0"
+
+[[projects]]
+  branch = "master"
+  name = "github.com/yuin/gopher-lua"
+  packages = [".","ast","parse","pm"]
+  revision = "3d9c8196b0034e3c36481248e02dc39953bcc849"
+
+[[projects]]
   branch = "master"
   name = "golang.org/x/net"
   packages = ["context","http2","http2/hpack","idna","internal/timeseries","lex/httplex","trace"]
@@ -70,6 +82,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "0f2cebec02eda43c82589dc7c2b31a6282c49f44fb8c604448fbe04a52adcc42"
+  inputs-digest = "be36cedbafea7046d04a98c5bdd9354f6829bd08c0ed7a4427f6ce992ddf2977"
   solver-name = "gps-cdcl"
   solver-version = 1
