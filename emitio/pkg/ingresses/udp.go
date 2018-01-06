@@ -1,27 +1,32 @@
-package pkg
+package ingresses
 
 import (
 	"context"
 	"net"
+	"net/url"
 	"strings"
 
+	"github.com/pkg/errors"
+	"github.com/supershabam/emitio/emitio"
 	"golang.org/x/sync/errgroup"
 )
 
-var _ Ingresser = &UDP{}
+var _ emitio.Ingresser = &UDP{}
 
+// UDP produced data by listening for udp packets on the network
 type UDP struct {
-	network, addr, uri string
+	uri *url.URL
 }
 
-func (u *UDP) Ingress(ctx context.Context) (<-chan Message, Wait) {
-	ch := make(chan Message)
+// Ingress implements emitio.Ingresser
+func (u *UDP) Ingress(ctx context.Context) (<-chan string, emitio.Wait) {
+	ch := make(chan string)
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
 		defer close(ch)
-		pc, err := net.ListenPacket(u.network, u.addr)
+		pc, err := net.ListenPacket("udp", u.uri.Host)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "listen packet")
 		}
 		eg.Go(func() error {
 			<-ctx.Done()
@@ -33,31 +38,24 @@ func (u *UDP) Ingress(ctx context.Context) (<-chan Message, Wait) {
 			if nr > 0 {
 				message := make([]byte, nr)
 				copy(message, buf[:nr])
-				msg := Message{
-					Origin: map[string]string{
-						"ingress": u.uri,
-					},
-					What: map[string]interface{}{
-						"message": string(message),
-					},
-				}
 				select {
 				case <-ctx.Done():
 					return nil
-				case ch <- msg:
+				case ch <- string(message):
 				}
 			}
 			if err != nil {
 				if strings.Contains(err.Error(), "use of closed network connection") {
 					return nil
 				}
-				return err
+				return errors.Wrap(err, "read")
 			}
 		}
 	})
 	return ch, eg.Wait
 }
 
-func (u *UDP) Name() string {
-	return u.uri
+// URI returns the uri used to instantiate the ingress
+func (u *UDP) URI() string {
+	return u.uri.String()
 }

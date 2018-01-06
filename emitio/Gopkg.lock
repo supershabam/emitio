@@ -32,6 +32,12 @@
   version = "v0.8.0"
 
 [[projects]]
+  name = "github.com/satori/go.uuid"
+  packages = ["."]
+  revision = "879c5887cd475cd7864858769793b2ceb0d44feb"
+  version = "v1.1.0"
+
+[[projects]]
   branch = "master"
   name = "github.com/yuin/gopher-lua"
   packages = [".","ast","parse","pm"]
@@ -76,6 +82,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "6a1f4a6d8b2edac9d578248844a0ccf1ce7ac1261422a43de8cdef1c17a33db3"
+  inputs-digest = "be36cedbafea7046d04a98c5bdd9354f6829bd08c0ed7a4427f6ce992ddf2977"
   solver-name = "gps-cdcl"
   solver-version = 1

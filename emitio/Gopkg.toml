@@ -36,3 +36,7 @@
 [[constraint]]
   branch = "master"
   name = "github.com/yuin/gopher-lua"
+
+[[constraint]]
+  name = "github.com/satori/go.uuid"
+  version = "1.1.0"
