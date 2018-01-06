@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"os"
 	"os/signal"
@@ -80,6 +81,24 @@ func main() {
 		}()
 		return grpcServer.Serve(lis)
 	})
+	go func() {
+		cc, err := grpc.Dial("localhost:8080", grpc.WithInsecure())
+		if err != nil {
+			panic(err)
+		}
+		client := pb.NewEmitioClient(cc)
+		stream, err := client.ReadRows(ctx, &pb.ReadRowsRequest{})
+		if err != nil {
+			panic(err)
+		}
+		for {
+			reply, err := stream.Recv()
+			if err != nil {
+				panic(err)
+			}
+			fmt.Printf("%+v\n", reply)
+		}
+	}()
 	err = eg.Wait()
 	if err != nil {
 		panic(err)

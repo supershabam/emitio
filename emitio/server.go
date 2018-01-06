@@ -120,7 +120,11 @@ func WithIngresses(is []Ingresser) ServerOption {
 type mockt struct{}
 
 func (m *mockt) Transform(ctx context.Context, acc string, in []string) (string, []string, error) {
-	return "", []string{"hi"}, nil
+	out := []string{}
+	for _ = range in {
+		out = append(out, "hey look, a line!")
+	}
+	return "accccumulator!", out, nil
 }
 
 func (s *Server) ReadRows(req *pb.ReadRowsRequest, stream pb.Emitio_ReadRowsServer) error {
@@ -136,8 +140,9 @@ func (s *Server) ReadRows(req *pb.ReadRowsRequest, stream pb.Emitio_ReadRowsServ
 		err := s.db.View(func(txn *badger.Txn) error {
 			last := start
 			defer func() {
-				start = make([]byte, len(last))
+				start = make([]byte, len(last)+1)
 				copy(start, last)
+				start[len(start)-1] = '\x00'
 			}()
 			opts := badger.DefaultIteratorOptions
 			opts.PrefetchSize = maxBatchSize
@@ -161,20 +166,22 @@ func (s *Server) ReadRows(req *pb.ReadRowsRequest, stream pb.Emitio_ReadRowsServ
 			}
 			return nil
 		})
-		tctx, cancel := context.WithTimeout(stream.Context(), time.Second*10)
-		var out []string
-		accumulator, out, err = t.Transform(tctx, accumulator, input)
-		cancel()
-		if err != nil {
-			return err
-		}
-		err = stream.Send(&pb.ReadRowsReply{
-			Rows:            out,
-			LastInputRow:    start,
-			LastAccumulator: accumulator,
-		})
-		if err != nil {
-			return err
+		if len(input) > 0 {
+			tctx, cancel := context.WithTimeout(stream.Context(), time.Second*10)
+			var out []string
+			accumulator, out, err = t.Transform(tctx, accumulator, input)
+			cancel()
+			if err != nil {
+				return err
+			}
+			err = stream.Send(&pb.ReadRowsReply{
+				Rows:            out,
+				LastInputRow:    start[:len(start)-1],
+				LastAccumulator: accumulator,
+			})
+			if err != nil {
+				return err
+			}
 		}
 		time.Sleep(time.Second)
 	}
