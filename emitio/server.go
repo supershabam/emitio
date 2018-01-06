@@ -11,6 +11,8 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dgraph-io/badger"
+	"github.com/pkg/errors"
+	"github.com/robertkrimen/otto"
 	uuid "github.com/satori/go.uuid"
 	"github.com/supershabam/emitio/emitio/pb"
 )
@@ -120,11 +122,51 @@ func WithIngresses(is []Ingresser) ServerOption {
 type mockt struct{}
 
 func (m *mockt) Transform(ctx context.Context, acc string, in []string) (string, []string, error) {
-	out := []string{}
-	for _ = range in {
-		out = append(out, "hey look, a line!")
+	vm := otto.New()
+	_, err := vm.Run(`function transform(acc, input) {
+	return ['accumulator!', []]
+}`)
+	if err != nil {
+		return "", nil, errors.Wrap(err, "compile")
 	}
-	return "accccumulator!", out, nil
+	v, err := vm.Get("transform")
+	if err != nil {
+		return "", nil, errors.Wrap(err, "get transform")
+	}
+	rv, err := v.Call(v, acc, in)
+	if err != nil {
+		return "", nil, err
+	}
+	result, err := rv.Export()
+	if err != nil {
+		return "", nil, err
+	}
+	r, ok := result.([]interface{})
+	if !ok {
+		return "", nil, errors.New("expected js result to be an array")
+	}
+	if len(r) < 2 {
+		return "", nil, errors.New("expected js result to be an array of at least len 2")
+	}
+	acci := r[0]
+	outi := r[1]
+	acc, ok = acci.(string)
+	if !ok {
+		return "", nil, errors.New("expected js result first element to be string")
+	}
+	outii, ok := outi.([]interface{})
+	if !ok {
+		return "", nil, errors.New("expected js result second element to be array")
+	}
+	out := []string{}
+	for _, i := range outii {
+		str, ok := i.(string)
+		if !ok {
+			return "", nil, errors.New("expected element of out array to be string but wasn't")
+		}
+		out = append(out, str)
+	}
+	return acc, out, nil
 }
 
 func (s *Server) ReadRows(req *pb.ReadRowsRequest, stream pb.Emitio_ReadRowsServer) error {
