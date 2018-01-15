@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/supershabam/emitio/emitio/pkg/transformers"
@@ -13,16 +12,26 @@ import (
 func TestTransform(t *testing.T) {
 	tr, err := transformers.NewJS(`
 	function transform(acc, lines) {
-		return ["accumulator!", ["hi"]]
+		var a = JSON.parse(acc)
+		var output = []
+		for (var i = 0; i < lines.length; i++) {
+			a.count++
+			output.push(lines[i])
+		}
+		return [JSON.stringify(a), output]
 	}
 `)
 	require.Nil(t, err)
 	ctx := context.TODO()
-	acc := "hi"
-	in := []string{}
+	acc := `{"count":0}`
+	in := []string{
+		"{\"a\":\"2018-01-15T12:07:24.186726127-08:00\",\"r\":\"sldfkjsdjklfhi\\n\",\"s\":1}",
+		"{\"a\":\"2018-01-15T12:12:32.977232909-08:00\",\"r\":\"sldfkjsdjklfhi\\n\",\"s\":2}",
+	}
 	acc, out, err := tr.Transform(ctx, acc, in)
 	require.Nil(t, err)
-	spew.Dump(out)
-	assert.Equal(t, "accumulator!", acc)
-	assert.Equal(t, []string{"hi"}, out)
+	assert.Equal(t, `{"count":2}`, acc)
+	assert.Equal(t, 2, len(out))
+	acc, out, err = tr.Transform(ctx, acc, out)
+	assert.Nil(t, err)
 }
