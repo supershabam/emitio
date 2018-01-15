@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dgraph-io/badger"
@@ -169,6 +170,11 @@ func (s *Server) ReadRows(req *pb.ReadRowsRequest, stream pb.Emitio_ReadRowsServ
 		if len(input) > 0 {
 			tctx, cancel := context.WithTimeout(stream.Context(), time.Second*10)
 			var out []string
+			logger, _ := zap.NewProduction()
+			logger.Info("transforming",
+				zap.String("accumulator", accumulator),
+				zap.Strings("input", input),
+			)
 			accumulator, out, err = t.Transform(tctx, accumulator, input)
 			cancel()
 			if err != nil {

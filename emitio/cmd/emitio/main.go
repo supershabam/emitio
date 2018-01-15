@@ -2,12 +2,12 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"os"
 	"os/signal"
 	"time"
 
+	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dgraph-io/badger"
@@ -31,6 +31,8 @@ func main() {
 	// --forward https://ingress.emit.io/
 	// --listen 0.0.0.0:8080
 	ctx, cancel := context.WithCancel(context.Background())
+	logger, _ := zap.NewProduction()
+	defer logger.Sync() // flushes buffer, if any
 	sigch := make(chan os.Signal, 2)
 	signal.Notify(sigch, os.Interrupt)
 	go func() {
@@ -44,7 +46,7 @@ func main() {
 	opts.ValueDir = "/tmp/emitio"
 	db, err := badger.Open(opts)
 	if err != nil {
-		panic(err)
+		logger.Fatal("badger open", zap.Error(err))
 	}
 	defer db.Close()
 	i, err := ingresses.MakeIngress("udp://localhost:9008")
@@ -81,26 +83,8 @@ func main() {
 		}()
 		return grpcServer.Serve(lis)
 	})
-	go func() {
-		cc, err := grpc.Dial("localhost:8080", grpc.WithInsecure())
-		if err != nil {
-			panic(err)
-		}
-		client := pb.NewEmitioClient(cc)
-		stream, err := client.ReadRows(ctx, &pb.ReadRowsRequest{})
-		if err != nil {
-			panic(err)
-		}
-		for {
-			reply, err := stream.Recv()
-			if err != nil {
-				panic(err)
-			}
-			fmt.Printf("%+v\n", reply)
-		}
-	}()
 	err = eg.Wait()
 	if err != nil {
-		panic(err)
+		logger.Fatal("unrecoverable error", zap.Error(err))
 	}
 }

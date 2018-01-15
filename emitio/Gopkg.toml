@@ -44,3 +44,7 @@
 [[constraint]]
   branch = "master"
   name = "github.com/robertkrimen/otto"
+
+[[constraint]]
+  name = "go.uber.org/zap"
+  version = "1.7.1"

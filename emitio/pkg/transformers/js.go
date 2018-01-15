@@ -42,11 +42,11 @@ func (js *JS) Transform(ctx context.Context, acc string, in []string) (string, [
 	}
 	rv, err := v.Call(v, acc, in)
 	if err != nil {
-		return "", nil, err
+		return "", nil, errors.Wrap(err, "call")
 	}
 	result, err := rv.Export()
 	if err != nil {
-		return "", nil, err
+		return "", nil, errors.Wrap(err, "export")
 	}
 	r, ok := result.([]interface{})
 	if !ok {

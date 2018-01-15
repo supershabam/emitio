@@ -8,6 +8,12 @@
   revision = "28f7e881ca57bc00e028f9ede9f0d9104cfeef5e"
 
 [[projects]]
+  name = "github.com/davecgh/go-spew"
+  packages = ["spew"]
+  revision = "346938d642f2ec3594ed81d874461961cd0faa76"
+  version = "v1.1.0"
+
+[[projects]]
   name = "github.com/dgraph-io/badger"
   packages = [".","options","protos","skl","table","y"]
   revision = "69611218c7078be6de16f4ea13fb256e701b6b73"
@@ -32,6 +38,12 @@
   version = "v0.8.0"
 
 [[projects]]
+  name = "github.com/pmezard/go-difflib"
+  packages = ["difflib"]
+  revision = "792786c7400a136282c1664665ae0a8db921c6c2"
+  version = "v1.0.0"
+
+[[projects]]
   branch = "master"
   name = "github.com/robertkrimen/otto"
   packages = [".","ast","dbg","file","parser","registry","token"]
@@ -44,10 +56,34 @@
   version = "v1.1.0"
 
 [[projects]]
+  name = "github.com/stretchr/testify"
+  packages = ["assert","require"]
+  revision = "b91bfb9ebec76498946beb6af7c0230c7cc7ba6c"
+  version = "v1.2.0"
+
+[[projects]]
   branch = "master"
   name = "github.com/yuin/gopher-lua"
   packages = [".","ast","parse","pm"]
   revision = "3d9c8196b0034e3c36481248e02dc39953bcc849"
+
+[[projects]]
+  name = "go.uber.org/atomic"
+  packages = ["."]
+  revision = "8474b86a5a6f79c443ce4b2992817ff32cf208b8"
+  version = "v1.3.1"
+
+[[projects]]
+  name = "go.uber.org/multierr"
+  packages = ["."]
+  revision = "3c4937480c32f4c13a875a1829af76c98ca3d40a"
+  version = "v1.1.0"
+
+[[projects]]
+  name = "go.uber.org/zap"
+  packages = [".","buffer","internal/bufferpool","internal/color","internal/exit","zapcore"]
+  revision = "35aad584952c3e7020db7b839f6b102de6271f89"
+  version = "v1.7.1"
 
 [[projects]]
   branch = "master"
@@ -94,6 +130,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "802712dd0899f54c58ad03e0d2000f1b7b54ea40d85cb47a2473035c243808e3"
+  inputs-digest = "567351ff558cb4b2ac2e738360c714aed038a81f813679616153dab4f4b6be59"
   solver-name = "gps-cdcl"
   solver-version = 1
