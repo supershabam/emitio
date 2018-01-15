@@ -6,22 +6,24 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"sync"
 	"time"
 
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dgraph-io/badger"
 	"github.com/pkg/errors"
-	"github.com/robertkrimen/otto"
 	uuid "github.com/satori/go.uuid"
 	"github.com/supershabam/emitio/emitio/pb"
+	"github.com/supershabam/emitio/emitio/pkg/transformers"
 )
 
 var _ pb.EmitioServer = &Server{}
 
 type Server struct {
-	db        *badger.DB
-	ingresses []Ingresser
+	db           *badger.DB
+	ingresses    []Ingresser
+	transformers sync.Map
 }
 
 func NewServer(ctx context.Context, opts ...ServerOption) (*Server, error) {
@@ -118,62 +120,18 @@ func WithIngresses(is []Ingresser) ServerOption {
 		return nil
 	}
 }
-
-type mockt struct{}
-
-func (m *mockt) Transform(ctx context.Context, acc string, in []string) (string, []string, error) {
-	vm := otto.New()
-	_, err := vm.Run(`function transform(acc, input) {
-	return ['accumulator!', ['bullshit', 'something else']]
-}`)
-	if err != nil {
-		return "", nil, errors.Wrap(err, "compile")
-	}
-	v, err := vm.Get("transform")
-	if err != nil {
-		return "", nil, errors.Wrap(err, "get transform")
-	}
-	rv, err := v.Call(v, acc, in)
-	if err != nil {
-		return "", nil, err
-	}
-	result, err := rv.Export()
-	if err != nil {
-		return "", nil, err
-	}
-	r, ok := result.([]interface{})
-	if !ok {
-		return "", nil, fmt.Errorf("expected js result to be an array but it is %T", result)
-	}
-	if len(r) < 2 {
-		return "", nil, errors.New("expected js result to be an array of at least len 2")
-	}
-	acci := r[0]
-	outi := r[1]
-	acc, ok = acci.(string)
-	if !ok {
-		return "", nil, errors.New("expected js result first element to be string")
-	}
-	outii, ok := outi.([]string)
-	if !ok {
-		return "", nil, fmt.Errorf("expected js result second element to be array but it is %T", outi)
-	}
-	// out := []string{}
-	// for _, i := range outii {
-	// 	str, ok := i.(string)
-	// 	if !ok {
-	// 		return "", nil, errors.New("expected element of out array to be string but wasn't")
-	// 	}
-	// 	out = append(out, str)
-	// }
-	return acc, outii, nil
-}
-
 func (s *Server) ReadRows(req *pb.ReadRowsRequest, stream pb.Emitio_ReadRowsServer) error {
-	t := &mockt{}
 	const (
 		maxBatchSize = 25
 	)
+	ti, ok := s.transformers.Load(req.TransformerId)
+	if !ok {
+		return fmt.Errorf("unhandled transformer id")
+	}
+	t, ok := ti.(Transformer)
+	if !ok {
+		panic(fmt.Sprintf("expected transformers to be set into map but found %T", ti))
+	}
 	start := req.Start
 	accumulator := req.Accumulator
 	count := 0
@@ -231,6 +189,11 @@ func (s *Server) ReadRows(req *pb.ReadRowsRequest, stream pb.Emitio_ReadRowsServ
 
 func (s *Server) MakeTransformer(ctx context.Context, req *pb.MakeTransformerRequest) (*pb.MakeTransformerReply, error) {
 	id := uuid.NewV4().String()
+	t, err := transformers.NewJS(string(req.Javascript))
+	if err != nil {
+		return nil, errors.Wrap(err, "new js")
+	}
+	s.transformers.Store(id, t)
 	return &pb.MakeTransformerReply{
 		Id: id,
 	}, nil
