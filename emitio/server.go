@@ -6,20 +6,25 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"sync"
 	"time"
 
+	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dgraph-io/badger"
+	"github.com/pkg/errors"
 	uuid "github.com/satori/go.uuid"
 	"github.com/supershabam/emitio/emitio/pb"
+	"github.com/supershabam/emitio/emitio/pkg/transformers"
 )
 
 var _ pb.EmitioServer = &Server{}
 
 type Server struct {
-	db        *badger.DB
-	ingresses []Ingresser
+	db           *badger.DB
+	ingresses    []Ingresser
+	transformers sync.Map
 }
 
 func NewServer(ctx context.Context, opts ...ServerOption) (*Server, error) {
@@ -116,22 +121,18 @@ func WithIngresses(is []Ingresser) ServerOption {
 		return nil
 	}
 }
-
-type mockt struct{}
-
-func (m *mockt) Transform(ctx context.Context, acc string, in []string) (string, []string, error) {
-	out := []string{}
-	for _ = range in {
-		out = append(out, "hey look, a line!")
-	}
-	return "accccumulator!", out, nil
-}
-
 func (s *Server) ReadRows(req *pb.ReadRowsRequest, stream pb.Emitio_ReadRowsServer) error {
-	t := &mockt{}
 	const (
 		maxBatchSize = 25
 	)
+	ti, ok := s.transformers.Load(req.TransformerId)
+	if !ok {
+		return fmt.Errorf("unhandled transformer id")
+	}
+	t, ok := ti.(Transformer)
+	if !ok {
+		panic(fmt.Sprintf("expected transformers to be set into map but found %T", ti))
+	}
 	start := req.Start
 	accumulator := req.Accumulator
 	count := 0
@@ -169,6 +170,11 @@ func (s *Server) ReadRows(req *pb.ReadRowsRequest, stream pb.Emitio_ReadRowsServ
 		if len(input) > 0 {
 			tctx, cancel := context.WithTimeout(stream.Context(), time.Second*10)
 			var out []string
+			logger, _ := zap.NewProduction()
+			logger.Info("transforming",
+				zap.String("accumulator", accumulator),
+				zap.Strings("input", input),
+			)
 			accumulator, out, err = t.Transform(tctx, accumulator, input)
 			cancel()
 			if err != nil {
@@ -189,6 +195,11 @@ func (s *Server) ReadRows(req *pb.ReadRowsRequest, stream pb.Emitio_ReadRowsServ
 
 func (s *Server) MakeTransformer(ctx context.Context, req *pb.MakeTransformerRequest) (*pb.MakeTransformerReply, error) {
 	id := uuid.NewV4().String()
+	t, err := transformers.NewJS(string(req.Javascript))
+	if err != nil {
+		return nil, errors.Wrap(err, "new js")
+	}
+	s.transformers.Store(id, t)
 	return &pb.MakeTransformerReply{
 		Id: id,
 	}, nil
