@@ -124,7 +124,7 @@ type mockt struct{}
 func (m *mockt) Transform(ctx context.Context, acc string, in []string) (string, []string, error) {
 	vm := otto.New()
 	_, err := vm.Run(`function transform(acc, input) {
-	return ['accumulator!', []]
+	return ['accumulator!', ['bullshit', 'something else']]
 }`)
 	if err != nil {
 		return "", nil, errors.Wrap(err, "compile")
@@ -143,7 +143,7 @@ func (m *mockt) Transform(ctx context.Context, acc string, in []string) (string,
 	}
 	r, ok := result.([]interface{})
 	if !ok {
-		return "", nil, errors.New("expected js result to be an array")
+		return "", nil, fmt.Errorf("expected js result to be an array but it is %T", result)
 	}
 	if len(r) < 2 {
 		return "", nil, errors.New("expected js result to be an array of at least len 2")
@@ -154,19 +154,19 @@ func (m *mockt) Transform(ctx context.Context, acc string, in []string) (string,
 	if !ok {
 		return "", nil, errors.New("expected js result first element to be string")
 	}
-	outii, ok := outi.([]interface{})
+	outii, ok := outi.([]string)
 	if !ok {
-		return "", nil, errors.New("expected js result second element to be array")
+		return "", nil, fmt.Errorf("expected js result second element to be array but it is %T", outi)
 	}
-	out := []string{}
-	for _, i := range outii {
-		str, ok := i.(string)
-		if !ok {
-			return "", nil, errors.New("expected element of out array to be string but wasn't")
-		}
-		out = append(out, str)
-	}
-	return acc, out, nil
+	// out := []string{}
+	// for _, i := range outii {
+	// 	str, ok := i.(string)
+	// 	if !ok {
+	// 		return "", nil, errors.New("expected element of out array to be string but wasn't")
+	// 	}
+	// 	out = append(out, str)
+	// }
+	return acc, outii, nil
 }
 
 func (s *Server) ReadRows(req *pb.ReadRowsRequest, stream pb.Emitio_ReadRowsServer) error {
