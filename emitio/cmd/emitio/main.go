@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net"
 	"os"
 	"os/signal"
@@ -17,6 +18,50 @@ import (
 	"github.com/supershabam/emitio/emitio/pkg/ingresses"
 	"google.golang.org/grpc"
 )
+
+type listener struct {
+	cancel func()
+	ctx    context.Context
+	conn   chan net.Conn
+}
+
+func (l *listener) Accept() (net.Conn, error) {
+	select {
+	case <-l.ctx.Done():
+		return nil, errors.New("context done")
+	case conn, active := <-l.conn:
+		if !active {
+			return nil, errors.New("channel done")
+		}
+		return conn, nil
+	}
+}
+
+func (l *listener) Close() error {
+	l.cancel()
+	return nil
+}
+
+func (l *listener) Addr() net.Addr {
+	return &addr{}
+}
+
+/*
+// Addr represents a network end point address.
+//
+// The two methods Network and String conventionally return strings
+// that can be passed as the arguments to Dial, but the exact form
+// and meaning of the strings is up to the implementation.
+type Addr interface {
+	Network() string // name of the network (for example, "tcp", "udp")
+	String() string  // string form of address (for example, "192.0.2.1:25", "[2001:db8::1]:80")
+}
+*/
+
+type addr struct{}
+
+func (a *addr) Network() string { return "rgrpc" }
+func (a *addr) String() string  { return "" }
 
 func main() {
 	// --origin pod=$(pod_name)
@@ -60,10 +105,16 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	lis, err := net.Listen("tcp", ":8080")
+	conn, err := net.Dial("tcp", ":8080")
 	if err != nil {
-		panic(err)
+		logger.Fatal("dialing conn", zap.Error(err))
 	}
+	lis := &listener{
+		cancel: cancel,
+		ctx:    ctx,
+		conn:   make(chan net.Conn, 1),
+	}
+	lis.conn <- conn
 	grpcServer := grpc.NewServer()
 	pb.RegisterEmitioServer(grpcServer, s)
 	eg, ctx := errgroup.WithContext(ctx)
