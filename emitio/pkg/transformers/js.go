@@ -29,7 +29,9 @@ func NewJS(script string) (*JS, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "getting transform function")
 	}
-	return nil, nil
+	return &JS{
+		vm: vm,
+	}, nil
 }
 
 // Transform implements emitio.Transformer
@@ -61,7 +63,10 @@ func (js *JS) Transform(ctx context.Context, acc string, in []string) (string, [
 	}
 	outii, ok := outi.([]string)
 	if !ok {
-		return "", nil, fmt.Errorf("expected js result second element to be array but it is %T", outi)
+		if li, ok := outi.([]interface{}); ok && len(li) == 0 {
+			return acc, []string{}, nil
+		}
+		return "", nil, fmt.Errorf("expected js result second element to be array of string but it is %T", outi)
 	}
 	return acc, outii, nil
 }
