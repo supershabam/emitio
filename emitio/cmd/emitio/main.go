@@ -92,7 +92,9 @@ func main() {
 	eg.Go(func() error {
 		go func() {
 			<-ctx.Done()
-			tctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+			timeout := 5 * time.Second
+			logger.Info("shutting down gracefully with timeout", zap.Duration("timeout", timeout))
+			tctx, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
 			go func() {
 				<-tctx.Done()
