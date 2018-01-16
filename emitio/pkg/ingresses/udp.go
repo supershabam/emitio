@@ -7,19 +7,19 @@ import (
 	"strings"
 
 	"github.com/pkg/errors"
-	"github.com/supershabam/emitio/emitio"
+	"github.com/supershabam/emitio/emitio/pkg"
 	"golang.org/x/sync/errgroup"
 )
 
-var _ emitio.Ingresser = &UDP{}
+var _ pkg.Ingresser = &UDP{}
 
 // UDP produced data by listening for udp packets on the network
 type UDP struct {
 	uri *url.URL
 }
 
-// Ingress implements emitio.Ingresser
-func (u *UDP) Ingress(ctx context.Context) (<-chan string, emitio.Wait) {
+// Ingress implements pkg.Ingresser
+func (u *UDP) Ingress(ctx context.Context) (<-chan string, pkg.Wait) {
 	ch := make(chan string)
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {

@@ -6,11 +6,11 @@ import (
 	"strings"
 
 	"github.com/pkg/errors"
-	"github.com/supershabam/emitio/emitio"
+	"github.com/supershabam/emitio/emitio/pkg"
 )
 
 // MakeIngress parses a rawuri to initialize an ingress
-func MakeIngress(rawuri string) (emitio.Ingresser, error) {
+func MakeIngress(rawuri string) (pkg.Ingresser, error) {
 	uri, err := url.Parse(rawuri)
 	if err != nil {
 		return nil, errors.Wrap(err, "url parse")

@@ -1,4 +1,4 @@
-package emitio
+package pkg
 
 import "context"
 

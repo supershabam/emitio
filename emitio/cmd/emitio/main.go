@@ -2,40 +2,49 @@ package main
 
 import (
 	"context"
-	"net"
+	"fmt"
 	"os"
 	"os/signal"
 	"time"
 
-	"github.com/cenkalti/backoff"
-	"github.com/dgraph-io/badger"
 	"github.com/spf13/pflag"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
-	"github.com/supershabam/emitio/emitio"
 	"github.com/supershabam/emitio/emitio/pb"
+	"github.com/supershabam/emitio/emitio/pkg"
 	"github.com/supershabam/emitio/emitio/pkg/ingresses"
 	"github.com/supershabam/emitio/emitio/pkg/listeners"
 )
 
+// --origin pod=$(pod_name)
+// --origin namespace=$(k8s_namespace)
+// --origin datacenter=nyc2
+// --ingress tail:///var/log/message
+// --ingress syslog+udp://0.0.0.0:514/?my_tag=value
+// --ingress ndjson+stdin:///
+// --ingress statsd+udp://0.0.0.0:9001/?region=nyc2#application=something
+// --ingress tail:///var/log/mongodb/mongodb.log#hint=mongodb-v3.18
+// --ingress opentracing+udp://0.0.0.0:9002/
+// --forward https://ingress.emit.io/
+// --storage file:///tmp/emitio/
 func main() {
-	// --origin pod=$(pod_name)
-	// --origin namespace=$(k8s_namespace)
-	// --origin datacenter=nyc2
-	// --ingress tail:///var/log/message
-	// --ingress syslog+udp://0.0.0.0:514/?my_tag=value
-	// --ingress ndjson+stdin:///
-	// --ingress statsd+udp://0.0.0.0:9001/?region=nyc2#application=something
-	// --ingress tail:///var/log/mongodb/mongodb.log#hint=mongodb-v3.18
-	// --ingress opentracing+udp://0.0.0.0:9002/
-	// --forward https://ingress.emit.io/
-	ctx, cancel := context.WithCancel(context.Background())
+	// flags
 	ingressURIs := pflag.StringArrayP("ingress", "i", []string{}, "udp://127.0.0.1:9009")
+	loggerURI := pflag.StringP("logger", "l", "stderr:///?level=info", "configure the logger")
+	storageURI := pflag.StringP("storage", "s", "file:///tmp/emitio/", "configure storage destination")
+	targetURI := pflag.StringP("target", "t", "https://target.emit.io/", "where to connect to")
 	pflag.Parse()
-	logger, _ := zap.NewProduction()
-	defer logger.Sync() // flushes buffer, if any
+	// set up logging
+	logger, err := pkg.ParseLogger(*loggerURI)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	defer logger.Sync()
+	// set up context
+	ctx, cancel := context.WithCancel(context.Background())
 	sigch := make(chan os.Signal, 2)
 	signal.Notify(sigch, os.Interrupt)
 	go func() {
@@ -44,15 +53,15 @@ func main() {
 		<-sigch
 		os.Exit(1)
 	}()
-	opts := badger.DefaultOptions
-	opts.Dir = "/tmp/emitio2"
-	opts.ValueDir = "/tmp/emitio2"
-	db, err := badger.Open(opts)
+	pkg.SetLogger(ctx, logger)
+	// set up storage
+	db, err := pkg.ParseStorage(*storageURI)
 	if err != nil {
-		logger.Fatal("badger open", zap.Error(err))
+		pkg.MustLogger(ctx).Fatal("parse storage", zap.Error(err))
 	}
 	defer db.Close()
-	il := []emitio.Ingresser{}
+	// set up ingresses
+	il := []pkg.Ingresser{}
 	if ingressURIs != nil {
 		for _, uri := range *ingressURIs {
 			i, err := ingresses.MakeIngress(uri)
@@ -62,36 +71,18 @@ func main() {
 			il = append(il, i)
 		}
 	}
-	s, err := emitio.NewServer(ctx,
-		emitio.WithIngresses(il),
-		emitio.WithDB(db),
+	// create server
+	s, err := pkg.NewServer(ctx,
+		pkg.WithIngresses(il),
+		pkg.WithDB(db),
 	)
 	if err != nil {
-		panic(err)
+		logger.Fatal("new server", zap.Error(err))
 	}
-	dialer := func(ctx context.Context) (net.Conn, error) {
-		var conn net.Conn
-		d := net.Dialer{}
-		operation := func() error {
-			logger.Info("dialing")
-			_conn, err := d.DialContext(ctx, "tcp", ":8080")
-			if err != nil {
-				return err
-			}
-			conn = _conn
-			return nil
-		}
-		policy := backoff.NewExponentialBackOff()
-		policy.Multiplier = 1.8
-		policy.MaxInterval = 5 * time.Minute
-		policy.MaxElapsedTime = 0 // allow looping forever until the context is cancelled
-		err := backoff.Retry(operation, backoff.WithContext(policy, ctx))
-		if err != nil {
-			return nil, err
-		}
-		return conn, nil
+	lis, err := listeners.NewReverse(ctx, listeners.WithTarget(*targetURI))
+	if err != nil {
+		pkg.MustLogger(ctx).Fatal("new reverse", zap.Error(err))
 	}
-	lis := listeners.NewReverse(dialer)
 	grpcServer := grpc.NewServer()
 	pb.RegisterEmitioServer(grpcServer, s)
 	eg, ctx := errgroup.WithContext(ctx)

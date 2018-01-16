@@ -1,3 +1,3 @@
-package emitio
+package pkg
 
 type Wait func() error

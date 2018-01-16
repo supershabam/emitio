@@ -5,6 +5,9 @@ import (
 	"errors"
 	"net"
 	"time"
+
+	"github.com/cenkalti/backoff"
+	"github.com/supershabam/emitio/emitio/pkg"
 )
 
 var _ net.Listener = &Reverse{}
@@ -19,15 +22,51 @@ type Reverse struct {
 	dialer func(context.Context) (net.Conn, error)
 }
 
-func NewReverse(dialer func(context.Context) (net.Conn, error)) *Reverse {
-	ctx, cancel := context.WithCancel(context.Background())
+type ReverseOption func(ctx context.Context, r *Reverse) error
+
+func WithTarget(rawuri string) ReverseOption {
+	return func(ctx context.Context, r *Reverse) error {
+		r.dialer = func(ctx context.Context) (net.Conn, error) {
+			var conn net.Conn
+			d := net.Dialer{}
+			operation := func() error {
+				pkg.MustLogger(ctx).Info("dialing")
+				// TODO parse from rawuri
+				_conn, err := d.DialContext(ctx, "tcp", ":8080")
+				if err != nil {
+					return err
+				}
+				conn = _conn
+				return nil
+			}
+			policy := backoff.NewExponentialBackOff()
+			policy.Multiplier = 1.8
+			policy.MaxInterval = 5 * time.Minute
+			policy.MaxElapsedTime = 0 // allow looping forever until the context is cancelled
+			err := backoff.Retry(operation, backoff.WithContext(policy, ctx))
+			if err != nil {
+				return nil, err
+			}
+			return conn, nil
+		}
+		return nil
+	}
+}
+
+func NewReverse(ctx context.Context, opts ...ReverseOption) (*Reverse, error) {
+	ctx, cancel := context.WithCancel(ctx)
 	r := &Reverse{
 		cancel: cancel,
 		ch:     make(chan net.Conn),
-		dialer: dialer,
+	}
+	for _, opt := range opts {
+		err := opt(ctx, r)
+		if err != nil {
+			return nil, err
+		}
 	}
 	go r.run(ctx)
-	return r
+	return r, nil
 }
 
 func (r *Reverse) run(ctx context.Context) {
