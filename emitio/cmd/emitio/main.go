@@ -9,6 +9,7 @@ import (
 
 	"github.com/cenkalti/backoff"
 	"github.com/dgraph-io/badger"
+	"github.com/spf13/pflag"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -31,6 +32,8 @@ func main() {
 	// --ingress opentracing+udp://0.0.0.0:9002/
 	// --forward https://ingress.emit.io/
 	ctx, cancel := context.WithCancel(context.Background())
+	ingressURIs := pflag.StringArrayP("ingress", "i", []string{}, "udp://127.0.0.1:9009")
+	pflag.Parse()
 	logger, _ := zap.NewProduction()
 	defer logger.Sync() // flushes buffer, if any
 	sigch := make(chan os.Signal, 2)
@@ -49,12 +52,18 @@ func main() {
 		logger.Fatal("badger open", zap.Error(err))
 	}
 	defer db.Close()
-	i, err := ingresses.MakeIngress("udp://localhost:9009")
-	if err != nil {
-		panic(err)
+	il := []emitio.Ingresser{}
+	if ingressURIs != nil {
+		for _, uri := range *ingressURIs {
+			i, err := ingresses.MakeIngress(uri)
+			if err != nil {
+				logger.Fatal("unable to make ingress", zap.String("ingress", uri))
+			}
+			il = append(il, i)
+		}
 	}
 	s, err := emitio.NewServer(ctx,
-		emitio.WithIngresses([]emitio.Ingresser{i}),
+		emitio.WithIngresses(il),
 		emitio.WithDB(db),
 	)
 	if err != nil {
