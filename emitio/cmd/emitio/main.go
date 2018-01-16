@@ -73,7 +73,9 @@ func main() {
 			return nil
 		}
 		policy := backoff.NewExponentialBackOff()
-		policy.MaxElapsedTime = 0 // allow looping forever
+		policy.Multiplier = 1.8
+		policy.MaxInterval = 5 * time.Minute
+		policy.MaxElapsedTime = 0 // allow looping forever until the context is cancelled
 		err := backoff.Retry(operation, backoff.WithContext(policy, ctx))
 		if err != nil {
 			return nil, err
