@@ -17,33 +17,6 @@ import (
 	"google.golang.org/grpc"
 )
 
-/**
-// A Listener is a generic network listener for stream-oriented protocols.
-//
-// Multiple goroutines may invoke methods on a Listener simultaneously.
-type Listener interface {
-	// Accept waits for and returns the next connection to the listener.
-	Accept() (Conn, error)
-
-	// Close closes the listener.
-	// Any blocked Accept operations will be unblocked and return errors.
-	Close() error
-
-	// Addr returns the listener's network address.
-	Addr() Addr
-}
-
-// Addr represents a network end point address.
-//
-// The two methods Network and String conventionally return strings
-// that can be passed as the arguments to Dial, but the exact form
-// and meaning of the strings is up to the implementation.
-type Addr interface {
-	Network() string // name of the network (for example, "tcp", "udp")
-	String() string  // string form of address (for example, "192.0.2.1:25", "[2001:db8::1]:80")
-}
-*/
-
 type listener struct {
 	cancel func()
 	cc     chan *grpc.ClientConn
@@ -60,6 +33,11 @@ func (l *listener) Accept() (net.Conn, error) {
 	dialer := func(string, time.Duration) (net.Conn, error) {
 		count++
 		if count > 1 {
+			// grpc will attempt to re-establish the connection since it thinks it
+			// can dial up a new one. But, since we're doing a reverse-grpc hack, we
+			// can't dial the person who dialed us. We have to just fail this redial
+			// attempt and expect that the agent will re-dial an edge node. Returning
+			// an error allows grpc client to fail.
 			return nil, errors.New("dialer called more than once")
 		}
 		return conn, nil
