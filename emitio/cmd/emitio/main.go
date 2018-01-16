@@ -2,66 +2,22 @@ package main
 
 import (
 	"context"
-	"errors"
 	"net"
 	"os"
 	"os/signal"
 	"time"
 
+	"github.com/cenkalti/backoff"
+	"github.com/dgraph-io/badger"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
-
-	"github.com/dgraph-io/badger"
+	"google.golang.org/grpc"
 
 	"github.com/supershabam/emitio/emitio"
 	"github.com/supershabam/emitio/emitio/pb"
 	"github.com/supershabam/emitio/emitio/pkg/ingresses"
-	"google.golang.org/grpc"
+	"github.com/supershabam/emitio/emitio/pkg/listeners"
 )
-
-type listener struct {
-	cancel func()
-	ctx    context.Context
-	conn   chan net.Conn
-}
-
-func (l *listener) Accept() (net.Conn, error) {
-	select {
-	case <-l.ctx.Done():
-		return nil, errors.New("context done")
-	case conn, active := <-l.conn:
-		if !active {
-			return nil, errors.New("channel done")
-		}
-		return conn, nil
-	}
-}
-
-func (l *listener) Close() error {
-	l.cancel()
-	return nil
-}
-
-func (l *listener) Addr() net.Addr {
-	return &addr{}
-}
-
-/*
-// Addr represents a network end point address.
-//
-// The two methods Network and String conventionally return strings
-// that can be passed as the arguments to Dial, but the exact form
-// and meaning of the strings is up to the implementation.
-type Addr interface {
-	Network() string // name of the network (for example, "tcp", "udp")
-	String() string  // string form of address (for example, "192.0.2.1:25", "[2001:db8::1]:80")
-}
-*/
-
-type addr struct{}
-
-func (a *addr) Network() string { return "rgrpc" }
-func (a *addr) String() string  { return "" }
 
 func main() {
 	// --origin pod=$(pod_name)
@@ -74,7 +30,6 @@ func main() {
 	// --ingress tail:///var/log/mongodb/mongodb.log#hint=mongodb-v3.18
 	// --ingress opentracing+udp://0.0.0.0:9002/
 	// --forward https://ingress.emit.io/
-	// --listen 0.0.0.0:8080
 	ctx, cancel := context.WithCancel(context.Background())
 	logger, _ := zap.NewProduction()
 	defer logger.Sync() // flushes buffer, if any
@@ -105,16 +60,27 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	conn, err := net.Dial("tcp", ":8080")
-	if err != nil {
-		logger.Fatal("dialing conn", zap.Error(err))
+	dialer := func(ctx context.Context) (net.Conn, error) {
+		var conn net.Conn
+		d := net.Dialer{}
+		operation := func() error {
+			logger.Info("dialing")
+			_conn, err := d.DialContext(ctx, "tcp", ":8080")
+			if err != nil {
+				return err
+			}
+			conn = _conn
+			return nil
+		}
+		policy := backoff.NewExponentialBackOff()
+		policy.MaxElapsedTime = 0 // allow looping forever
+		err := backoff.Retry(operation, backoff.WithContext(policy, ctx))
+		if err != nil {
+			return nil, err
+		}
+		return conn, nil
 	}
-	lis := &listener{
-		cancel: cancel,
-		ctx:    ctx,
-		conn:   make(chan net.Conn, 1),
-	}
-	lis.conn <- conn
+	lis := listeners.NewReverse(dialer)
 	grpcServer := grpc.NewServer()
 	pb.RegisterEmitioServer(grpcServer, s)
 	eg, ctx := errgroup.WithContext(ctx)
