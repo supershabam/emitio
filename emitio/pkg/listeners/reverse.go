@@ -49,7 +49,12 @@ func (r *Reverse) run(ctx context.Context) {
 			return // this closes the channel so that accept will return an error
 		case r.ch <- conn:
 		}
-		<-done // loop to create new connection
+		select {
+		case <-ctx.Done():
+			return
+		case <-done:
+			// loop to create new connection
+		}
 	}
 }
 
