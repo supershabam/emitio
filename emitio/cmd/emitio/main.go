@@ -42,14 +42,14 @@ func main() {
 		os.Exit(1)
 	}()
 	opts := badger.DefaultOptions
-	opts.Dir = "/tmp/emitio"
-	opts.ValueDir = "/tmp/emitio"
+	opts.Dir = "/tmp/emitio2"
+	opts.ValueDir = "/tmp/emitio2"
 	db, err := badger.Open(opts)
 	if err != nil {
 		logger.Fatal("badger open", zap.Error(err))
 	}
 	defer db.Close()
-	i, err := ingresses.MakeIngress("udp://localhost:9008")
+	i, err := ingresses.MakeIngress("udp://localhost:9009")
 	if err != nil {
 		panic(err)
 	}
