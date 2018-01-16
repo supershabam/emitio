@@ -2,6 +2,12 @@
 
 
 [[projects]]
+  name = "github.com/cenkalti/backoff"
+  packages = ["."]
+  revision = "61153c768f31ee5f130071d08fc82b85208528de"
+  version = "v1.1.0"
+
+[[projects]]
   branch = "master"
   name = "github.com/golang/protobuf"
   packages = ["proto","ptypes","ptypes/any","ptypes/duration","ptypes/timestamp"]
@@ -76,6 +82,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "9431d7123632b7041cb82414e88eb9107c51292b734fdcc4e2de936905a40359"
+  inputs-digest = "7cb68d8388b7b9396135eeca6273c7b7d20c1ff1e54600e9036b7ed9708bbbba"
   solver-name = "gps-cdcl"
   solver-version = 1

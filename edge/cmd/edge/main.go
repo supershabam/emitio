@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
+	"os/signal"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -54,7 +56,12 @@ func (l *listener) Accept() (net.Conn, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "accept")
 	}
+	count := 0
 	dialer := func(string, time.Duration) (net.Conn, error) {
+		count++
+		if count > 1 {
+			return nil, errors.New("dialer called more than once")
+		}
 		return conn, nil
 	}
 	cc, err := grpc.DialContext(
@@ -86,6 +93,14 @@ func (l *listener) Addr() net.Addr {
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	sigch := make(chan os.Signal, 2)
+	signal.Notify(sigch, os.Interrupt)
+	go func() {
+		<-sigch
+		cancel()
+		<-sigch
+		os.Exit(1)
+	}()
 	l, err := net.Listen("tcp", ":8080")
 	if err != nil {
 		panic(err)
@@ -115,7 +130,7 @@ func main() {
 					return nil
 				}
 				eg.Go(func() error {
-					err := process(cc)
+					err := process(ctx, cc)
 					if err != nil {
 						logger.Error("processing client connection", zap.Error(err))
 					}
@@ -125,13 +140,13 @@ func main() {
 		}
 	})
 	err = eg.Wait()
+	time.Sleep(time.Second)
 	if err != nil {
 		panic(err)
 	}
 }
 
-func process(cc *grpc.ClientConn) error {
-	ctx := context.TODO()
+func process(ctx context.Context, cc *grpc.ClientConn) error {
 	client := pb.NewEmitioClient(cc)
 	mtr, err := client.MakeTransformer(ctx, &pb.MakeTransformerRequest{
 		Javascript: []byte(`function transform(acc, lines) {
