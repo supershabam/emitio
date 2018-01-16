@@ -26,9 +26,25 @@
   name = "github.com/golang/protobuf"
 
 [[constraint]]
+  name = "github.com/pkg/errors"
+  version = "0.8.0"
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/supershabam/emitio"
+
+[[constraint]]
   branch = "master"
   name = "golang.org/x/net"
 
 [[constraint]]
+  branch = "master"
+  name = "golang.org/x/sync"
+
+[[constraint]]
   name = "google.golang.org/grpc"
-  version = "1.8.2"
+  version = "1.9.1"
+
+[[constraint]]
+  name = "github.com/cenkalti/backoff"
+  version = "1.1.0"

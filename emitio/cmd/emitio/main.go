@@ -7,15 +7,16 @@ import (
 	"os/signal"
 	"time"
 
+	"github.com/cenkalti/backoff"
+	"github.com/dgraph-io/badger"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
-
-	"github.com/dgraph-io/badger"
+	"google.golang.org/grpc"
 
 	"github.com/supershabam/emitio/emitio"
 	"github.com/supershabam/emitio/emitio/pb"
 	"github.com/supershabam/emitio/emitio/pkg/ingresses"
-	"google.golang.org/grpc"
+	"github.com/supershabam/emitio/emitio/pkg/listeners"
 )
 
 func main() {
@@ -29,7 +30,6 @@ func main() {
 	// --ingress tail:///var/log/mongodb/mongodb.log#hint=mongodb-v3.18
 	// --ingress opentracing+udp://0.0.0.0:9002/
 	// --forward https://ingress.emit.io/
-	// --listen 0.0.0.0:8080
 	ctx, cancel := context.WithCancel(context.Background())
 	logger, _ := zap.NewProduction()
 	defer logger.Sync() // flushes buffer, if any
@@ -42,14 +42,14 @@ func main() {
 		os.Exit(1)
 	}()
 	opts := badger.DefaultOptions
-	opts.Dir = "/tmp/emitio"
-	opts.ValueDir = "/tmp/emitio"
+	opts.Dir = "/tmp/emitio2"
+	opts.ValueDir = "/tmp/emitio2"
 	db, err := badger.Open(opts)
 	if err != nil {
 		logger.Fatal("badger open", zap.Error(err))
 	}
 	defer db.Close()
-	i, err := ingresses.MakeIngress("udp://localhost:9008")
+	i, err := ingresses.MakeIngress("udp://localhost:9009")
 	if err != nil {
 		panic(err)
 	}
@@ -60,10 +60,29 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	lis, err := net.Listen("tcp", ":8080")
-	if err != nil {
-		panic(err)
+	dialer := func(ctx context.Context) (net.Conn, error) {
+		var conn net.Conn
+		d := net.Dialer{}
+		operation := func() error {
+			logger.Info("dialing")
+			_conn, err := d.DialContext(ctx, "tcp", ":8080")
+			if err != nil {
+				return err
+			}
+			conn = _conn
+			return nil
+		}
+		policy := backoff.NewExponentialBackOff()
+		policy.Multiplier = 1.8
+		policy.MaxInterval = 5 * time.Minute
+		policy.MaxElapsedTime = 0 // allow looping forever until the context is cancelled
+		err := backoff.Retry(operation, backoff.WithContext(policy, ctx))
+		if err != nil {
+			return nil, err
+		}
+		return conn, nil
 	}
+	lis := listeners.NewReverse(dialer)
 	grpcServer := grpc.NewServer()
 	pb.RegisterEmitioServer(grpcServer, s)
 	eg, ctx := errgroup.WithContext(ctx)
@@ -73,7 +92,9 @@ func main() {
 	eg.Go(func() error {
 		go func() {
 			<-ctx.Done()
-			tctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+			timeout := 5 * time.Second
+			logger.Info("shutting down gracefully with timeout", zap.Duration("timeout", timeout))
+			tctx, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
 			go func() {
 				<-tctx.Done()
