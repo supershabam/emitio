@@ -25,7 +25,9 @@ type Server struct {
 }
 
 func NewServer(ctx context.Context, opts ...ServerOption) (*Server, error) {
-	s := &Server{}
+	s := &Server{
+		nodes: map[string]*grpc.ClientConn{},
+	}
 	for _, opt := range opts {
 		err := opt(ctx, s)
 		if err != nil {
