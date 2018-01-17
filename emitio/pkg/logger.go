@@ -2,7 +2,6 @@ package pkg
 
 import (
 	"context"
-	"errors"
 
 	"go.uber.org/zap"
 )
@@ -23,7 +22,8 @@ func Logger(ctx context.Context) (*zap.Logger, error) {
 	loggeri := ctx.Value(_loggerKey)
 	logger, ok := loggeri.(*zap.Logger)
 	if !ok {
-		return nil, errors.New("logger not set on context")
+		return zap.NewProduction()
+		// TODO fix how we're doing logging
 	}
 	return logger, nil
 }

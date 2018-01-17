@@ -1,0 +1,6 @@
+- copy:
+    src: '{{playbook_dir}}/artifacts/edge_linux_amd64'
+    dest: /usr/local/bin/edge
+    owner: root
+    group: root
+    mode: 0755

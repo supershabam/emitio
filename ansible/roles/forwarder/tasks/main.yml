@@ -1,0 +1,6 @@
+- copy:
+    src: '{{playbook_dir}}/artifacts/emitio_linux_amd64'
+    dest: /usr/local/bin/emitio
+    owner: root
+    group: root
+    mode: 0755
