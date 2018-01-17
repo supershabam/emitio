@@ -8,6 +8,12 @@
   revision = "28f7e881ca57bc00e028f9ede9f0d9104cfeef5e"
 
 [[projects]]
+  name = "github.com/cenkalti/backoff"
+  packages = ["."]
+  revision = "61153c768f31ee5f130071d08fc82b85208528de"
+  version = "v1.1.0"
+
+[[projects]]
   name = "github.com/davecgh/go-spew"
   packages = ["spew"]
   revision = "346938d642f2ec3594ed81d874461961cd0faa76"
@@ -56,16 +62,16 @@
   version = "v1.1.0"
 
 [[projects]]
+  name = "github.com/spf13/pflag"
+  packages = ["."]
+  revision = "e57e3eeb33f795204c1ca35f56c44f83227c6e66"
+  version = "v1.0.0"
+
+[[projects]]
   name = "github.com/stretchr/testify"
   packages = ["assert","require"]
   revision = "b91bfb9ebec76498946beb6af7c0230c7cc7ba6c"
   version = "v1.2.0"
-
-[[projects]]
-  branch = "master"
-  name = "github.com/yuin/gopher-lua"
-  packages = [".","ast","parse","pm"]
-  revision = "3d9c8196b0034e3c36481248e02dc39953bcc849"
 
 [[projects]]
   name = "go.uber.org/atomic"
@@ -130,6 +136,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "3d2766b449a7708eae671c763d749bd621ac7339c57431f6570ac27a88ae74d9"
+  inputs-digest = "fa1669f4d5ba6cfb5d757fed2fd93e5d67db3402531c8454c20056516546c297"
   solver-name = "gps-cdcl"
   solver-version = 1
