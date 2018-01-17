@@ -34,6 +34,7 @@ func main() {
 	if err != nil {
 		logger.Fatal("rgrpc net listen", zap.Error(err))
 	}
+	logger.Info("api listening", zap.String("addr", apiAddr))
 	apiL, err := net.Listen("tcp", apiAddr)
 	if err != nil {
 		logger.Fatal("api net listen", zap.Error(err))
