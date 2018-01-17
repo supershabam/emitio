@@ -79,6 +79,7 @@ func main() {
 		<-sigch
 		os.Exit(1)
 	}()
+	fmt.Println("listening on :8080")
 	l, err := net.Listen("tcp", ":8080")
 	if err != nil {
 		panic(err)
