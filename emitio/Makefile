@@ -4,7 +4,7 @@ SRCS = $(shell find . -type f -iname '*.go')
 
 bin: target/emitio_linux_amd64
 
-target/emitio_linux_amd64: $(SRCS)
+target/emitio_linux_amd64: $(SRCS) Makefile
 	docker run \
 		--rm \
 		-v $(shell pwd):/go/src/github.com/supershabam/emitio/emitio \
