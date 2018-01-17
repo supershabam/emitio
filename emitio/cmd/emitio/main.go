@@ -31,6 +31,7 @@ import (
 // --storage file:///tmp/emitio/
 func main() {
 	// flags
+	originTags := pflag.StringArrayP("origin", "o", []string{}, "tags to include with ALL messages collected")
 	ingressURIs := pflag.StringArrayP("ingress", "i", []string{}, "udp://127.0.0.1:9009")
 	loggerURI := pflag.StringP("logger", "l", "stderr:///?level=info", "configure the logger")
 	storageURI := pflag.StringP("storage", "s", "file:///tmp/emitio/", "configure storage destination")
@@ -71,10 +72,15 @@ func main() {
 			il = append(il, i)
 		}
 	}
+	tags, err := pkg.ParseOriginTags(*originTags)
+	if err != nil {
+		logger.Fatal("parse origin tags", zap.Error(err))
+	}
 	// create server
 	s, err := pkg.NewServer(ctx,
 		pkg.WithIngresses(il),
 		pkg.WithDB(db),
+		pkg.withTags(tags),
 	)
 	if err != nil {
 		logger.Fatal("new server", zap.Error(err))
