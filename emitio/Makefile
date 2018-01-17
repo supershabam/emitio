@@ -12,5 +12,5 @@ target/emitio_linux_amd64: $(SRCS) Makefile
 		golang:1.9.2-stretch \
 		go build -o $@ cmd/emitio/main.go
 
-pb/emitio.pb.go: emitio.proto
-	protoc emitio.proto --go_out=plugins=grpc:./pb
+pb/emitio/emitio.pb.go: emitio.proto
+	protoc emitio.proto --go_out=plugins=grpc:./pb/emitio

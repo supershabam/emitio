@@ -12,7 +12,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
-	"github.com/supershabam/emitio/emitio/pb"
+	"github.com/supershabam/emitio/emitio/pb/emitio"
 	"github.com/supershabam/emitio/emitio/pkg"
 	"github.com/supershabam/emitio/emitio/pkg/ingresses"
 	"github.com/supershabam/emitio/emitio/pkg/listeners"
@@ -90,7 +90,7 @@ func main() {
 		pkg.MustLogger(ctx).Fatal("new reverse", zap.Error(err))
 	}
 	grpcServer := grpc.NewServer()
-	pb.RegisterEmitioServer(grpcServer, s)
+	emitio.RegisterEmitioServer(grpcServer, s)
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
 		return s.Run(ctx)

@@ -15,11 +15,11 @@ import (
 	"github.com/dgraph-io/badger"
 	"github.com/pkg/errors"
 	uuid "github.com/satori/go.uuid"
-	"github.com/supershabam/emitio/emitio/pb"
+	"github.com/supershabam/emitio/emitio/pb/emitio"
 	"github.com/supershabam/emitio/emitio/pkg/transformers"
 )
 
-var _ pb.EmitioServer = &Server{}
+var _ emitio.EmitioServer = &Server{}
 
 type Server struct {
 	db           *badger.DB
@@ -121,7 +121,7 @@ func WithIngresses(is []Ingresser) ServerOption {
 		return nil
 	}
 }
-func (s *Server) ReadRows(req *pb.ReadRowsRequest, stream pb.Emitio_ReadRowsServer) error {
+func (s *Server) ReadRows(req *emitio.ReadRowsRequest, stream emitio.Emitio_ReadRowsServer) error {
 	const (
 		maxBatchSize = 25
 	)
@@ -180,7 +180,7 @@ func (s *Server) ReadRows(req *pb.ReadRowsRequest, stream pb.Emitio_ReadRowsServ
 			if err != nil {
 				return err
 			}
-			err = stream.Send(&pb.ReadRowsReply{
+			err = stream.Send(&emitio.ReadRowsReply{
 				Rows:            out,
 				LastInputRow:    start[:len(start)-1],
 				LastAccumulator: accumulator,
@@ -193,20 +193,20 @@ func (s *Server) ReadRows(req *pb.ReadRowsRequest, stream pb.Emitio_ReadRowsServ
 	}
 }
 
-func (s *Server) MakeTransformer(ctx context.Context, req *pb.MakeTransformerRequest) (*pb.MakeTransformerReply, error) {
+func (s *Server) MakeTransformer(ctx context.Context, req *emitio.MakeTransformerRequest) (*emitio.MakeTransformerReply, error) {
 	id := uuid.NewV4().String()
 	t, err := transformers.NewJS(string(req.Javascript))
 	if err != nil {
 		return nil, errors.Wrap(err, "new js")
 	}
 	s.transformers.Store(id, t)
-	return &pb.MakeTransformerReply{
+	return &emitio.MakeTransformerReply{
 		Id: id,
 	}, nil
 }
 
-func (s *Server) GetIngresses(context.Context, *pb.GetIngressesRequest) (*pb.GetIngressesReply, error) {
-	reply := &pb.GetIngressesReply{}
+func (s *Server) GetIngresses(context.Context, *emitio.GetIngressesRequest) (*emitio.GetIngressesReply, error) {
+	reply := &emitio.GetIngressesReply{}
 	reply.Ingresses = make([]string, 0, len(s.ingresses))
 	for _, i := range s.ingresses {
 		reply.Ingresses = append(reply.Ingresses, i.URI())
