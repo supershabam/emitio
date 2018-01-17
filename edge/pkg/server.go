@@ -54,6 +54,18 @@ func (s *Server) Run(ctx context.Context) error {
 		}
 	})
 	eg.Go(func() error {
+		grpcServer := grpc.NewServer()
+		edge.RegisterEdgeServer(grpcServer, s)
+		err := grpcServer.Serve(s.l)
+		if err != nil {
+			if strings.Contains(err.Error(), "use of closed network connection") {
+				return nil
+			}
+			return err
+		}
+		return nil
+	})
+	eg.Go(func() error {
 		<-ctx.Done()
 		s.rgrpc.Close()
 		s.l.Close()
