@@ -2,12 +2,6 @@
 
 
 [[projects]]
-  name = "github.com/cenkalti/backoff"
-  packages = ["."]
-  revision = "61153c768f31ee5f130071d08fc82b85208528de"
-  version = "v1.1.0"
-
-[[projects]]
   branch = "master"
   name = "github.com/golang/protobuf"
   packages = ["proto","ptypes","ptypes/any","ptypes/duration","ptypes/timestamp"]
@@ -20,16 +14,10 @@
   version = "v0.8.0"
 
 [[projects]]
-  name = "github.com/rkt/rkt"
-  packages = ["tests/testutils/logger"]
-  revision = "6de500a70706403c8c611d80491aea64019141b0"
-  version = "v1.29.0"
-
-[[projects]]
-  branch = "master"
-  name = "github.com/supershabam/emitio"
-  packages = ["emitio/pb"]
-  revision = "d3c99773b4718f1db68beab23e2dd289c409742a"
+  name = "github.com/satori/go.uuid"
+  packages = ["."]
+  revision = "f58768cc1a7a7e77a3bd49e98cdd21419399b6a3"
+  version = "v1.2.0"
 
 [[projects]]
   name = "go.uber.org/atomic"
@@ -82,6 +70,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "7cb68d8388b7b9396135eeca6273c7b7d20c1ff1e54600e9036b7ed9708bbbba"
+  inputs-digest = "4f99b547bd79bd13bddacd0cb448bc9820b41fdb2cb01baa68c41024e6249c85"
   solver-name = "gps-cdcl"
   solver-version = 1

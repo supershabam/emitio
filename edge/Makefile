@@ -5,7 +5,8 @@ SRCS = $(shell find . -type f -iname '*.go')
 bin: target/edge_linux_amd64
 
 generate:
-	protoc -I../emitio emitio.proto --go_out=plugins=grpc:pb
+	protoc -I../emitio emitio.proto --go_out=plugins=grpc:pb/emitio
+	protoc -I./ edge.proto --go_out=plugins=grpc:pb/edge
 
 target/edge_linux_amd64: $(SRCS) Makefile
 	docker run \

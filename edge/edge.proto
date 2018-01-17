@@ -1,14 +1,22 @@
 syntax = "proto3";
 
-package emitio;
+package edge;
 
-service Emitio {
+service Edge {
+  rpc GetNodes (GetNodesRequest) returns (GetNodesReply) {}
   rpc ReadRows (ReadRowsRequest) returns (stream ReadRowsReply) {}
   rpc MakeTransformer (MakeTransformerRequest) returns (MakeTransformerReply) {}
   rpc GetIngresses (GetIngressesRequest) returns (GetIngressesReply) {}
 }
 
+message GetNodesRequest {} // possibly add a filter
+
+message GetNodesReply {
+    repeated string nodes = 1;
+}
+
 message GetIngressesRequest {
+    string node = 1;
     // possibly add filters here, for now just get ALL
 }
 
@@ -17,8 +25,9 @@ message GetIngressesReply {
 }
 
 message MakeTransformerRequest {
+    string node = 1;
     // if set, then javascript transformer is created
-    bytes javascript = 1;
+    bytes javascript = 2;
 }
 
 message MakeTransformerReply {
@@ -26,13 +35,14 @@ message MakeTransformerReply {
 }
 
 message ReadRowsRequest {
-    bytes start = 1;
-    bytes end = 2;
-    string transformer_id = 3;
-    string accumulator = 4;
+    string node = 1;
+    bytes start = 2;
+    bytes end = 3;
+    string transformer_id = 4;
+    string accumulator = 5;
     // ReadRows will terminate after reading N rows worth of input. Note: transforms are not
     // 1:1 for input to output rows, so N rows of input may result in M rows of output.
-    int64 limit = 5;
+    int64 limit = 6;
 }
 
 message ReadRowsReply {
