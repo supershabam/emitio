@@ -9,12 +9,12 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/sync/errgroup"
 	"github.com/dgraph-io/badger"
 	"github.com/pkg/errors"
 	uuid "github.com/satori/go.uuid"
 	"github.com/supershabam/emitio/emitio/pb/emitio"
 	"github.com/supershabam/emitio/emitio/pkg/transformers"
+	"golang.org/x/sync/errgroup"
 )
 
 var _ emitio.EmitioServer = &Server{}
@@ -23,11 +23,15 @@ type Server struct {
 	db           *badger.DB
 	ingresses    []Ingresser
 	transformers sync.Map
+	cond         sync.Cond
 }
 
 func NewServer(ctx context.Context, opts ...ServerOption) (*Server, error) {
 	s := &Server{
 		ingresses: []Ingresser{},
+		cond: sync.Cond{
+			L: &sync.Mutex{},
+		},
 	}
 	for _, opt := range opts {
 		err := opt(ctx, s)
@@ -95,6 +99,7 @@ func (s *Server) Run(ctx context.Context) error {
 						dur := time.Minute * 30
 						return txn.SetWithTTL([]byte(key), b, dur)
 					})
+					s.cond.Broadcast()
 				}
 			}
 		})
@@ -134,6 +139,7 @@ func (s *Server) ReadRows(req *emitio.ReadRowsRequest, stream emitio.Emitio_Read
 	count := 0
 	for {
 		input := []string{}
+		seen := false
 		err := s.db.View(func(txn *badger.Txn) error {
 			last := start
 			defer func() {
@@ -145,6 +151,7 @@ func (s *Server) ReadRows(req *emitio.ReadRowsRequest, stream emitio.Emitio_Read
 			opts.PrefetchSize = maxBatchSize
 			it := txn.NewIterator(opts)
 			for it.Seek(start); it.Valid(); it.Next() {
+				seen = true
 				item := it.Item()
 				k := item.Key()
 				if len(req.End) > 0 && bytes.Compare(k, req.End) == -1 {
@@ -180,7 +187,15 @@ func (s *Server) ReadRows(req *emitio.ReadRowsRequest, stream emitio.Emitio_Read
 				return err
 			}
 		}
-		time.Sleep(time.Second)
+		if !seen {
+			s.cond.L.Lock()
+			// TODO add sequence tracking under lock
+			// if server.seq == myLastSeq {
+			// 	s.cond.Wait()
+			// }
+			s.cond.Wait()
+			s.cond.L.Unlock()
+		}
 	}
 }
 
