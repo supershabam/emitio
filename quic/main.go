@@ -129,6 +129,9 @@ func main() {
 	var (
 		addr = "127.0.0.1:8080"
 	)
+	http.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(rw, "greetings!\n")
+	})
 	ctx := context.Background()
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
