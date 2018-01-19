@@ -1,0 +1,25 @@
+- name: copy emitio binary
+  copy:
+    src: '{{playbook_dir}}/artifacts/emitio_linux_amd64'
+    dest: /usr/local/bin/emitio
+    owner: root
+    group: root
+    mode: 0755
+- name: copy emitio systemd service definition
+  copy:
+    src: '../files/emitio.service'
+    dest: /etc/systemd/system/emitio.service
+    owner: root
+    group: root
+    mode: 0644
+- name: Make sure emitio is running
+  systemd: state=started name=emitio
+- name: copy rsyslog configuration to forward to emitio
+  copy:
+    src: '../files/emitio.conf'
+    dest: /etc/rsyslog.d/60-emitio.conf
+    owner: root
+    group: root
+    mode: 0644
+- name: reload rsyslog
+  command: service rsyslog force-reload

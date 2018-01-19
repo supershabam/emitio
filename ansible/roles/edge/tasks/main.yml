@@ -1,6 +1,16 @@
-- copy:
+- name: copy edge binary
+  copy:
     src: '{{playbook_dir}}/artifacts/edge_linux_amd64'
     dest: /usr/local/bin/edge
     owner: root
     group: root
     mode: 0755
+- name: copy edge systemd service definition
+  copy:
+    src: '../files/edge.service'
+    dest: /etc/systemd/system/edge.service
+    owner: root
+    group: root
+    mode: 0644
+- name: Make sure edge is running
+  systemd: state=started name=edge

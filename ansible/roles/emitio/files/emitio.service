@@ -1,0 +1,11 @@
+[Unit]
+Description=emitio agent
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/emitio \
+  --ingress syslog+udp://127.0.0.1:514
+Type=simple
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,10 @@
+[Unit]
+Description=emitio edge
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/edge
+Type=simple
+
+[Install]
+WantedBy=default.target
