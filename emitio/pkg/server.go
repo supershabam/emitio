@@ -9,9 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
-
 	"github.com/dgraph-io/badger"
 	"github.com/pkg/errors"
 	uuid "github.com/satori/go.uuid"
@@ -57,7 +55,6 @@ func (s *Server) Run(ctx context.Context) error {
 				for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
 					item := it.Item()
 					key = item.Key()
-					fmt.Println(key)
 				}
 				if key != nil {
 					parts := bytes.Split(key, []byte{':'})
@@ -98,7 +95,6 @@ func (s *Server) Run(ctx context.Context) error {
 						dur := time.Minute * 30
 						return txn.SetWithTTL([]byte(key), b, dur)
 					})
-					fmt.Printf("%s:%s\n", key, b)
 				}
 			}
 		})
@@ -170,11 +166,6 @@ func (s *Server) ReadRows(req *emitio.ReadRowsRequest, stream emitio.Emitio_Read
 		if len(input) > 0 {
 			tctx, cancel := context.WithTimeout(stream.Context(), time.Second*10)
 			var out []string
-			logger, _ := zap.NewProduction()
-			logger.Info("transforming",
-				zap.String("accumulator", accumulator),
-				zap.Strings("input", input),
-			)
 			accumulator, out, err = t.Transform(tctx, accumulator, input)
 			cancel()
 			if err != nil {
