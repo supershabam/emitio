@@ -25,26 +25,27 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	zap.ReplaceGlobals(logger)
 	var (
 		rgrpcAddr = ":8080"
 		apiAddr   = ":9090"
 	)
-	logger.Info("reverse grpc listening", zap.String("addr", rgrpcAddr))
+	zap.L().Info("reverse grpc listening", zap.String("addr", rgrpcAddr))
 	rgrpcL, err := net.Listen("tcp", rgrpcAddr)
 	if err != nil {
-		logger.Fatal("rgrpc net listen", zap.Error(err))
+		zap.L().Fatal("rgrpc net listen", zap.Error(err))
 	}
-	logger.Info("api listening", zap.String("addr", apiAddr))
+	zap.L().Info("api listening", zap.String("addr", apiAddr))
 	apiL, err := net.Listen("tcp", apiAddr)
 	if err != nil {
-		logger.Fatal("api net listen", zap.Error(err))
+		zap.L().Fatal("api net listen", zap.Error(err))
 	}
 	s, err := pkg.NewServer(ctx, pkg.WithRGRPCListener(rgrpcL), pkg.WithAPIListener(apiL))
 	if err != nil {
-		logger.Fatal("creating server", zap.Error(err))
+		zap.L().Fatal("creating server", zap.Error(err))
 	}
 	err = s.Run(ctx)
 	if err != nil {
-		logger.Fatal("running server", zap.Error(err))
+		zap.L().Fatal("running server", zap.Error(err))
 	}
 }

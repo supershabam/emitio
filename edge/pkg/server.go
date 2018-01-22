@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 
 	uuid "github.com/satori/go.uuid"
@@ -41,7 +42,7 @@ func (s *Server) Run(ctx context.Context) error {
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
 		for {
-			cc, err := s.rgrpc.Accept()
+			cc, wait, err := s.rgrpc.Accept()
 			if err != nil {
 				if strings.Contains(err.Error(), "listener has shut down") {
 					return nil
@@ -52,7 +53,14 @@ func (s *Server) Run(ctx context.Context) error {
 			s.m.Lock()
 			s.nodes[id] = cc
 			s.m.Unlock()
-			// TODO watch client state for changes and remove from map
+			eg.Go(func() error {
+				wait()
+				zap.L().Info("removing connection", zap.String("connection_id", id))
+				s.m.Lock()
+				delete(s.nodes, id)
+				s.m.Unlock()
+				return nil
+			})
 		}
 	})
 	eg.Go(func() error {
