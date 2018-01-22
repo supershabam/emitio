@@ -3,6 +3,7 @@ package listeners
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"time"
 
@@ -32,7 +33,9 @@ func WithTarget(rawuri string) ReverseOption {
 			operation := func() error {
 				pkg.MustLogger(ctx).Info("dialing")
 				// TODO parse from rawuri
-				_conn, err := d.DialContext(ctx, "tcp", ":8080")
+				addr := "138.197.67.130:8080"
+				fmt.Printf("dialing %s\n", addr)
+				_conn, err := d.DialContext(ctx, "tcp", addr)
 				if err != nil {
 					return err
 				}

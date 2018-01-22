@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dgraph-io/badger"
@@ -24,6 +25,7 @@ type Server struct {
 	ingresses    []Ingresser
 	transformers sync.Map
 	cond         sync.Cond
+	count        uint64
 }
 
 func NewServer(ctx context.Context, opts ...ServerOption) (*Server, error) {
@@ -99,6 +101,9 @@ func (s *Server) Run(ctx context.Context) error {
 						dur := time.Minute * 30
 						return txn.SetWithTTL([]byte(key), b, dur)
 					})
+					s.cond.L.Lock()
+					s.count++
+					s.cond.L.Unlock()
 					s.cond.Broadcast()
 				}
 			}
@@ -123,9 +128,6 @@ func WithIngresses(is []Ingresser) ServerOption {
 	}
 }
 func (s *Server) ReadRows(req *emitio.ReadRowsRequest, stream emitio.Emitio_ReadRowsServer) error {
-	const (
-		maxBatchSize = 25
-	)
 	ti, ok := s.transformers.Load(req.TransformerId)
 	if !ok {
 		return fmt.Errorf("unhandled transformer id")
@@ -139,6 +141,7 @@ func (s *Server) ReadRows(req *emitio.ReadRowsRequest, stream emitio.Emitio_Read
 	count := 0
 	for {
 		input := []string{}
+		startCount := atomic.LoadUint64(&s.count)
 		seen := false
 		err := s.db.View(func(txn *badger.Txn) error {
 			last := start
@@ -148,7 +151,7 @@ func (s *Server) ReadRows(req *emitio.ReadRowsRequest, stream emitio.Emitio_Read
 				start[len(start)-1] = '\x00'
 			}()
 			opts := badger.DefaultIteratorOptions
-			opts.PrefetchSize = maxBatchSize
+			opts.PrefetchSize = 25
 			it := txn.NewIterator(opts)
 			for it.Seek(start); it.Valid(); it.Next() {
 				seen = true
@@ -164,7 +167,7 @@ func (s *Server) ReadRows(req *emitio.ReadRowsRequest, stream emitio.Emitio_Read
 				last = k
 				input = append(input, string(v))
 				count++
-				if count >= maxBatchSize {
+				if count >= int(req.Limit) {
 					return nil
 				}
 			}
@@ -189,11 +192,9 @@ func (s *Server) ReadRows(req *emitio.ReadRowsRequest, stream emitio.Emitio_Read
 		}
 		if !seen {
 			s.cond.L.Lock()
-			// TODO add sequence tracking under lock
-			// if server.seq == myLastSeq {
-			// 	s.cond.Wait()
-			// }
-			s.cond.Wait()
+			if startCount == s.count {
+				s.cond.Wait()
+			}
 			s.cond.L.Unlock()
 		}
 	}
