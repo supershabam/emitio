@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"net"
 	"os"
 	"os/signal"
@@ -27,13 +28,19 @@ func main() {
 	}
 	zap.ReplaceGlobals(logger)
 	var (
-		rgrpcAddr = ":8080"
-		apiAddr   = ":9090"
+		apiAddr = ":9090"
 	)
-	zap.L().Info("reverse grpc listening", zap.String("addr", rgrpcAddr))
-	rgrpcL, err := net.Listen("tcp", rgrpcAddr)
+	cer, err := tls.LoadX509KeyPair(
+		"/etc/letsencrypt/live/edge.emit.io/fullchain.pem",
+		"/etc/letsencrypt/live/edge.emit.io/privkey.pem",
+	)
 	if err != nil {
-		zap.L().Fatal("rgrpc net listen", zap.Error(err))
+		zap.L().Fatal("while loading x509 key pair", zap.Error(err))
+	}
+	config := &tls.Config{Certificates: []tls.Certificate{cer}}
+	rgrpcL, err := tls.Listen("tcp", ":443", config)
+	if err != nil {
+		zap.L().Fatal("tls listen", zap.Error(err))
 	}
 	zap.L().Info("api listening", zap.String("addr", apiAddr))
 	apiL, err := net.Listen("tcp", apiAddr)
