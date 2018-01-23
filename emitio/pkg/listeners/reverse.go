@@ -2,13 +2,16 @@ package listeners
 
 import (
 	"context"
-	"errors"
+	"crypto/tls"
 	"fmt"
 	"net"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/cenkalti/backoff"
-	"github.com/supershabam/emitio/emitio/pkg"
+	"github.com/pkg/errors"
+	"go.uber.org/zap"
 )
 
 var _ net.Listener = &Reverse{}
@@ -27,26 +30,49 @@ type ReverseOption func(ctx context.Context, r *Reverse) error
 
 func WithTarget(rawuri string) ReverseOption {
 	return func(ctx context.Context, r *Reverse) error {
+		u, err := url.Parse(rawuri)
+		if err != nil {
+			return errors.Wrap(err, "url parse")
+		}
+		if u.Scheme != "https" {
+			return fmt.Errorf("target uri must be https targeturi=%s", rawuri)
+		}
+		host := u.Host
+		addr := u.Host
+		if !strings.Contains(host, ":") {
+			addr = addr + ":443"
+		} else {
+			parts := strings.SplitN(host, ":", 2)
+			host = parts[0]
+		}
 		r.dialer = func(ctx context.Context) (net.Conn, error) {
 			var conn net.Conn
 			d := net.Dialer{}
 			operation := func() error {
-				pkg.MustLogger(ctx).Info("dialing")
-				// TODO parse from rawuri
-				addr := "138.197.67.130:8080"
-				fmt.Printf("dialing %s\n", addr)
+				zap.L().Info("dialing", zap.String("addr", addr))
 				_conn, err := d.DialContext(ctx, "tcp", addr)
 				if err != nil {
 					return err
 				}
-				conn = _conn
+				tconn := tls.Client(_conn, &tls.Config{
+					ServerName: host,
+				})
+				// TODO allow timeout
+				err = tconn.Handshake()
+				if err != nil {
+					_conn.Close()
+					return errors.Wrap(err, "tls handshake")
+				}
+				conn = tconn
 				return nil
 			}
 			policy := backoff.NewExponentialBackOff()
 			policy.Multiplier = 1.8
 			policy.MaxInterval = 5 * time.Minute
 			policy.MaxElapsedTime = 0 // allow looping forever until the context is cancelled
-			err := backoff.Retry(operation, backoff.WithContext(policy, ctx))
+			err := backoff.RetryNotify(operation, backoff.WithContext(policy, ctx), func(err error, t time.Duration) {
+				zap.L().Info("error while dialing", zap.Error(err))
+			})
 			if err != nil {
 				return nil, err
 			}

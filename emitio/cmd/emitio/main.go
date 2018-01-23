@@ -35,7 +35,7 @@ func main() {
 	ingressURIs := pflag.StringArrayP("ingress", "i", []string{}, "udp://127.0.0.1:9009")
 	loggerURI := pflag.StringP("logger", "l", "stderr:///?level=info", "configure the logger")
 	storageURI := pflag.StringP("storage", "s", "file:///tmp/emitio/", "configure storage destination")
-	targetURI := pflag.StringP("target", "t", "https://target.emit.io/", "where to connect to")
+	targetURI := pflag.StringP("target", "t", "https://edge.emit.io/", "where to connect to")
 	pflag.Parse()
 	// set up logging
 	logger, err := pkg.ParseLogger(*loggerURI)
@@ -43,6 +43,7 @@ func main() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
+	zap.ReplaceGlobals(logger)
 	defer logger.Sync()
 	// set up context
 	ctx, cancel := context.WithCancel(context.Background())
@@ -54,11 +55,10 @@ func main() {
 		<-sigch
 		os.Exit(1)
 	}()
-	pkg.SetLogger(ctx, logger)
 	// set up storage
 	db, err := pkg.ParseStorage(*storageURI)
 	if err != nil {
-		pkg.MustLogger(ctx).Fatal("parse storage", zap.Error(err))
+		zap.L().Fatal("parse storage", zap.Error(err))
 	}
 	defer db.Close()
 	// set up ingresses
@@ -67,7 +67,7 @@ func main() {
 		for _, uri := range *ingressURIs {
 			i, err := ingresses.MakeIngress(uri)
 			if err != nil {
-				logger.Fatal("unable to make ingress", zap.String("ingress", uri))
+				zap.L().Fatal("unable to make ingress", zap.String("ingress", uri))
 			}
 			il = append(il, i)
 		}
@@ -83,11 +83,11 @@ func main() {
 		// pkg.withTags(tags),
 	)
 	if err != nil {
-		logger.Fatal("new server", zap.Error(err))
+		zap.L().Fatal("new server", zap.Error(err))
 	}
 	lis, err := listeners.NewReverse(ctx, listeners.WithTarget(*targetURI))
 	if err != nil {
-		pkg.MustLogger(ctx).Fatal("new reverse", zap.Error(err))
+		zap.L().Fatal("new reverse", zap.Error(err))
 	}
 	grpcServer := grpc.NewServer()
 	emitio.RegisterEmitioServer(grpcServer, s)
@@ -99,7 +99,7 @@ func main() {
 		go func() {
 			<-ctx.Done()
 			timeout := 5 * time.Second
-			logger.Info("shutting down gracefully with timeout", zap.Duration("timeout", timeout))
+			zap.L().Info("shutting down gracefully with timeout", zap.Duration("timeout", timeout))
 			tctx, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
 			go func() {
@@ -112,6 +112,6 @@ func main() {
 	})
 	err = eg.Wait()
 	if err != nil {
-		logger.Fatal("unrecoverable error", zap.Error(err))
+		zap.L().Fatal("unrecoverable error", zap.Error(err))
 	}
 }
