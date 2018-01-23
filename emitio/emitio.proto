@@ -3,21 +3,21 @@ syntax = "proto3";
 package emitio;
 
 service Emitio {
-  rpc ReadRows (ReadRowsRequest) returns (stream ReadRowsReply) {}
-  rpc MakeTransformer (MakeTransformerRequest) returns (MakeTransformerReply) {}
-  rpc GetIngresses (GetIngressesRequest) returns (GetIngressesReply) {}
+    rpc Info(InfoRequest) returns (InfoReply) {}    
+    rpc MakeTransformer (MakeTransformerRequest) returns (MakeTransformerReply) {}
+    rpc ReadRows (ReadRowsRequest) returns (stream ReadRowsReply) {}
 }
 
-message GetIngressesRequest {
-    // possibly add filters here, for now just get ALL
-}
+message InfoRequest {}
 
-message GetIngressesReply {
-    repeated string ingresses = 1;
+message InfoReply {
+    string key = 1;
+    string id = 2;
+    map<string,string> origin = 3;
+    repeated string ingresses = 4;
 }
 
 message MakeTransformerRequest {
-    // if set, then javascript transformer is created
     bytes javascript = 1;
 }
 
@@ -30,9 +30,14 @@ message ReadRowsRequest {
     bytes end = 2;
     string transformer_id = 3;
     string accumulator = 4;
-    // ReadRows will terminate after reading N rows worth of input. Note: transforms are not
-    // 1:1 for input to output rows, so N rows of input may result in M rows of output.
-    int64 limit = 5;
+    // max number of rows to be processed by the transformer before sending a ReadRowsReply
+    uint32 input_limit = 5;
+    // max number of rows to be produced by the transformer before sending a ReadRowsReply. Note,
+    // a single input may produce many output lines, so the ReadRowsReply may have more than this
+    // limit in its reply, but once it crosses the limit the ReadRowsReply will be sent.
+    uint32 output_limit = 6;
+    // max duration in seconds before a ReadRowsReply is sent
+    double max_duration = 7;
 }
 
 message ReadRowsReply {
@@ -41,7 +46,7 @@ message ReadRowsReply {
     // This is so that a client may efficiently scan to where the request left off in a subsequent
     // call to ReadRows in the case where many rows were processed, but because of the transform, no
     // output was generated.
-    bytes last_input_row = 2;
+    bytes last_input_row_key = 2;
     // similar to last_input_row, the last_accumulator returns the last accumulator from a transform
     // of intput -> output. This combined with last_row allows a client to call ReadRows again
     // and pick up where the last call left off.
