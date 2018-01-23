@@ -5,7 +5,24 @@ package emitio;
 service Emitio {
     rpc Info(InfoRequest) returns (InfoReply) {}    
     rpc MakeTransformer (MakeTransformerRequest) returns (MakeTransformerReply) {}
-    rpc ReadRows (ReadRowsRequest) returns (stream ReadRowsReply) {}
+    rpc Read (ReadRequest) returns (stream ReadReply) {}
+}
+
+message ReadRequest {
+    bytes start = 1;
+    bytes end = 2;
+    string transformer_id = 3;
+    string accumulator = 4;
+    uint32 input_limit = 5;
+    uint32 output_limit = 6;
+    double duration_limit = 7;
+    bool tail = 8;
+}
+
+message ReadReply {
+    repeated string rows = 1;
+    string last_accumulator = 2;
+    bytes last_input_key = 3;
 }
 
 message InfoRequest {}
@@ -15,6 +32,7 @@ message InfoReply {
     string id = 2;
     map<string,string> origin = 3;
     repeated string ingresses = 4;
+    string version = 5;
 }
 
 message MakeTransformerRequest {
@@ -23,32 +41,4 @@ message MakeTransformerRequest {
 
 message MakeTransformerReply {
     string id = 1;
-}
-
-message ReadRowsRequest {
-    bytes start = 1;
-    bytes end = 2;
-    string transformer_id = 3;
-    string accumulator = 4;
-    // max number of rows to be processed by the transformer before sending a ReadRowsReply
-    uint32 input_limit = 5;
-    // max number of rows to be produced by the transformer before sending a ReadRowsReply. Note,
-    // a single input may produce many output lines, so the ReadRowsReply may have more than this
-    // limit in its reply, but once it crosses the limit the ReadRowsReply will be sent.
-    uint32 output_limit = 6;
-    // max duration in seconds before a ReadRowsReply is sent
-    double max_duration = 7;
-}
-
-message ReadRowsReply {
-    repeated string rows = 1;
-    // optionally, the server might return the row key of the last completely scanned row.
-    // This is so that a client may efficiently scan to where the request left off in a subsequent
-    // call to ReadRows in the case where many rows were processed, but because of the transform, no
-    // output was generated.
-    bytes last_input_row_key = 2;
-    // similar to last_input_row, the last_accumulator returns the last accumulator from a transform
-    // of intput -> output. This combined with last_row allows a client to call ReadRows again
-    // and pick up where the last call left off.
-    string last_accumulator = 3;
 }

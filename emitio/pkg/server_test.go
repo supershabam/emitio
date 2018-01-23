@@ -47,7 +47,7 @@ func TestTransform(t *testing.T) {
 func TestInfo(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	addr, _, err := server(ctx,
+	c, _, err := server(ctx,
 		WithID("id-1234"),
 		WithIngresses([]Ingresser{&mockIngresser{}}),
 		WithKey("key-9876"),
@@ -56,9 +56,6 @@ func TestInfo(t *testing.T) {
 		}),
 	)
 	require.Nil(t, err)
-	cc, err := grpc.DialContext(ctx, addr, grpc.WithInsecure())
-	require.Nil(t, err)
-	c := emitio.NewEmitioClient(cc)
 	reply, err := c.Info(ctx, &emitio.InfoRequest{})
 	require.Nil(t, err)
 	assert.Equal(t, &emitio.InfoReply{
@@ -76,52 +73,60 @@ func TestGetOne(t *testing.T) {
 	zap.ReplaceGlobals(l)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	addr, _, err := server(ctx,
-		WithIngresses([]Ingresser{&mockIngresser{}}),
+	c, _, err := server(ctx,
+		WithIngresses([]Ingresser{&mockIngresser{msgs: []string{"one"}}}),
 	)
 	require.Nil(t, err)
-	cc, err := grpc.Dial(addr, grpc.WithInsecure())
-	require.Nil(t, err)
-	c := emitio.NewEmitioClient(cc)
 	// transformer that squashes all output but we still expect to get a response on each input
 	mtr, err := c.MakeTransformer(ctx, &emitio.MakeTransformerRequest{
 		Javascript: []byte(`
 function transform(acc, line) {
-	return [acc, []]
+	return [acc, [line]]
 }`),
 	})
 	require.Nil(t, err)
-	stream, err := c.ReadRows(ctx, &emitio.ReadRowsRequest{
+	stream, err := c.Read(ctx, &emitio.ReadRequest{
 		Start:         []byte{},
 		TransformerId: mtr.Id,
-		InputLimit:    2,
+		InputLimit:    1,
 	})
 	require.Nil(t, err)
 	reply, err := stream.Recv()
 	require.Nil(t, err)
-	assert.Equal(t, &emitio.ReadRowsReply{
+	assert.Equal(t, &emitio.ReadReply{
 		Rows:            nil,
 		LastAccumulator: "",
-		LastInputRowKey: []byte("mock:///:0000000000000001"),
+		LastInputKey:    []byte("mock:///:0000000000000001"),
 	}, reply)
 	reply, err = stream.Recv()
 	require.Nil(t, err)
-	assert.Equal(t, &emitio.ReadRowsReply{
+	assert.Equal(t, &emitio.ReadReply{
 		Rows:            nil,
 		LastAccumulator: "",
-		LastInputRowKey: []byte("mock:///:0000000000000002"),
+		LastInputKey:    []byte("mock:///:0000000000000002"),
 	}, reply)
 }
 
-type mockIngresser struct{}
+type mockIngresser struct {
+	name string
+	msgs []string
+}
 
-func (mi mockIngresser) Ingress(ctx context.Context) (<-chan string, Wait) {
+func (mi *mockIngresser) Ingress(ctx context.Context) (<-chan string, Wait) {
 	ch := make(chan string)
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
 		defer close(ch)
-		ch <- "one"
-		ch <- "two"
+		if mi.msgs == nil {
+			return nil
+		}
+		for _, msg := range mi.msgs {
+			select {
+			case <-ctx.Done():
+				return nil
+			case ch <- msg:
+			}
+		}
 		return nil
 	})
 	return ch, eg.Wait
@@ -129,30 +134,30 @@ func (mi mockIngresser) Ingress(ctx context.Context) (<-chan string, Wait) {
 
 // URI uniquely identifies an ingress and all its configuration.
 func (mi mockIngresser) URI() string {
-	return "mock:///"
+	return fmt.Sprintf("mock:///%s", mi.name)
 }
 
-func server(ctx context.Context, opts ...ServerOption) (string, Wait, error) {
+func server(ctx context.Context, opts ...ServerOption) (emitio.EmitioClient, Wait, error) {
 	eg, ctx := errgroup.WithContext(ctx)
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		return "", nil, err
+		return nil, nil, err
 	}
 	addr := l.Addr().String()
 	path, err := ioutil.TempDir("", "emitio")
 	if err != nil {
-		return "", nil, err
+		return nil, nil, err
 	}
 	db, err := ParseStorage(fmt.Sprintf("file://%s", path))
 	if err != nil {
-		return "", nil, err
+		return nil, nil, err
 	}
 	opts = append([]ServerOption{
 		WithDB(db),
 	}, opts...)
 	s, err := NewServer(ctx, opts...)
 	if err != nil {
-		return "", nil, err
+		return nil, nil, err
 	}
 	eg.Go(func() error {
 		return s.Run(ctx)
@@ -162,5 +167,10 @@ func server(ctx context.Context, opts ...ServerOption) (string, Wait, error) {
 		emitio.RegisterEmitioServer(grpcServer, s)
 		return grpcServer.Serve(l)
 	})
-	return addr, eg.Wait, nil
+	cc, err := grpc.Dial(addr, grpc.WithInsecure())
+	if err != nil {
+		return nil, nil, err
+	}
+	c := emitio.NewEmitioClient(cc)
+	return c, eg.Wait, nil
 }

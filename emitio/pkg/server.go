@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 
 	"github.com/dgraph-io/badger"
@@ -90,9 +89,141 @@ func (s *Server) MakeTransformer(ctx context.Context, req *emitio.MakeTransforme
 	}, nil
 }
 
-// ReadRows queries the embedded key/value database and streams results back to the client. The frequency
+func (s *Server) batch(ctx context.Context, start, end []byte, maxLen int) (chan []row, Wait) {
+	ch := make(chan []row)
+	eg, ctx := errgroup.WithContext(ctx)
+	eg.Go(func() error {
+		defer close(ch)
+		var last []byte
+		batch := make([]row, 0, maxLen)
+		flush := func() bool {
+			select {
+			case <-ctx.Done():
+				return false
+			case ch <- batch:
+				batch = make([]row, 0, maxLen)
+				return true
+			}
+		}
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			default:
+			}
+			err := s.db.View(func(txn *badger.Txn) error {
+				// the row key []byte is only valid within the txn, so we must allocate
+				// and copy data into a new slice to survive exiting the function
+				opts := badger.DefaultIteratorOptions
+				opts.PrefetchSize = 25
+				it := txn.NewIterator(opts)
+				for it.Seek(start); it.Valid(); it.Next() {
+					item := it.Item()
+					k := item.Key()
+					if len(end) > 0 && bytes.Compare(k, end) == -1 {
+						return io.EOF
+					}
+					v, err := item.Value()
+					if err != nil {
+						return err
+					}
+					r := row{
+						key:   make([]byte, len(k)),
+						value: string(v),
+					}
+					copy(r.key, k)
+					last = r.key
+					batch = append(batch, r)
+					if len(batch) >= maxLen {
+						return nil
+					}
+				}
+				return io.EOF
+			})
+			if err != nil && err == io.EOF {
+				flush()
+				return nil
+			}
+			if err != nil {
+				return errors.Wrap(err, "batch db view")
+			}
+			start = make([]byte, len(last)+1)
+			copy(start, last)
+			start[len(start)-1] = 0x00
+			flush()
+		}
+	})
+	return ch, eg.Wait
+}
+
+func (s *Server) transform(
+	ctx context.Context,
+	t Transformer,
+	last []byte,
+	acc string,
+	rowsCh <-chan []row,
+	wait Wait, maxInput, maxOutput int,
+	maxDelay time.Duration,
+) (chan *emitio.ReadReply, Wait) {
+	ch := make(chan *emitio.ReadReply)
+	eg, ctx := errgroup.WithContext(ctx)
+	eg.Go(func() error {
+		defer close(ch)
+		inputCount := 0
+		reply := &emitio.ReadReply{
+			Rows:            []string{},
+			LastAccumulator: acc,
+			LastInputKey:    last,
+		}
+		flush := func() bool {
+			select {
+			case <-ctx.Done():
+				return false
+			case ch <- reply:
+				inputCount = 0
+				reply = &emitio.ReadReply{
+					Rows:            []string{},
+					LastAccumulator: reply.LastAccumulator,
+					LastInputKey:    reply.LastInputKey,
+				}
+				return true
+			}
+		}
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			case rows, active := <-rowsCh:
+				if !active {
+					if !flush() {
+						return nil
+					}
+					return wait()
+				}
+				for _, r := range rows {
+					acc, out, err := t.Transform(ctx, acc, r.value)
+					if err != nil {
+						return errors.Wrap(err, "transform")
+					}
+					inputCount++
+					reply.LastAccumulator = acc
+					reply.LastInputKey = r.key
+					reply.Rows = append(reply.Rows, out...)
+					if inputCount > maxInput || len(reply.Rows) > maxOutput {
+						if !flush() {
+							return nil
+						}
+					}
+				}
+			}
+		}
+	})
+	return ch, eg.Wait
+}
+
+// Read queries the embedded key/value database and streams results back to the client. The frequency
 // at which responses are sent can be tuned by setting the input_limit, output_limit, and max_duration variables.
-func (s *Server) ReadRows(req *emitio.ReadRowsRequest, stream emitio.Emitio_ReadRowsServer) error {
+func (s *Server) Read(req *emitio.ReadRequest, stream emitio.Emitio_ReadServer) error {
 	ti, ok := s.transformers.Load(req.TransformerId)
 	if !ok {
 		return grpc.Errorf(codes.NotFound, "transformer id not found")
@@ -101,111 +232,39 @@ func (s *Server) ReadRows(req *emitio.ReadRowsRequest, stream emitio.Emitio_Read
 	if !ok {
 		panic(fmt.Sprintf("expected transformer type to be set into map but found %T", ti))
 	}
-	var (
-		inputCount  uint32
-		outputCount uint32
+Loop:
+	s.cond.L.Lock()
+	count := s.count
+	s.cond.L.Unlock()
+	rowsCh, wait := s.batch(stream.Context(), req.Start, req.End, 25)
+	replyCh, wait := s.transform(
+		stream.Context(),
+		t,
+		req.Start,
+		req.Accumulator,
+		rowsCh,
+		wait,
+		int(req.InputLimit),
+		int(req.OutputLimit),
+		time.Duration(req.DurationLimit*1e9),
 	)
-	const (
-		batchSize int = 25
-	)
-	reply := &emitio.ReadRowsReply{
-		Rows:            []string{},
-		LastAccumulator: req.Accumulator,
-		LastInputRowKey: req.Start,
-	}
 	for {
-		var deadline time.Time
-		if req.MaxDuration != 0 {
-			deadline = time.Now().Add(time.Duration(req.MaxDuration * 1e9))
-		}
-		s.cond.L.Lock()
-		count := s.count
-		s.cond.L.Unlock()
-		start := make([]byte, len(reply.LastInputRowKey)+1)
-		copy(start, reply.LastInputRowKey)
-		start[len(start)-1] = 0x00
-		batch, rerr := s.read(start, req.End, batchSize)
-		if rerr != nil {
-			if rerr != io.EOF {
-				return rerr
-			}
-		}
-		// clip batch to max allowed by input limit if set
-		if req.InputLimit > 0 && inputCount+uint32(len(batch)) >= req.InputLimit {
-			zap.L().Debug("slicing batch",
-				zap.Uint32("input limit", req.InputLimit),
-				zap.Int("len batch", len(batch)),
-			)
-			batch = batch[:req.InputLimit-inputCount]
-		}
-		var outputLimit uint32
-		if req.OutputLimit > 0 {
-			outputLimit = req.OutputLimit - outputCount
-		}
-		var rows []string
-		var err error
-		reply.LastAccumulator, rows, reply.LastInputRowKey, err = s.transform(stream.Context(), t, reply.LastAccumulator, batch, outputLimit)
-		if err != nil {
-			return err
-		}
-		reply.Rows = append(reply.Rows, rows...)
-		outputCount += uint32(len(rows))
-		// TODO add min_output to request
-		// decide whether or not to send
-		if rerr == io.EOF ||
-			(req.InputLimit > 0 && inputCount >= req.InputLimit) ||
-			(req.OutputLimit > 0 && outputCount >= req.OutputLimit) {
-			err = stream.Send(reply)
-			if err != nil {
-				return err
-			}
-			reply = &emitio.ReadRowsReply{
-				Rows:            []string{},
-				LastInputRowKey: reply.LastInputRowKey,
-				LastAccumulator: reply.LastAccumulator,
-			}
-			inputCount = 0
-			outputCount = 0
-			// decide whether to end loop
-			if rerr == io.EOF {
-				return nil
-			}
-			continue
-		}
-		// decide on whether or not to wait
-		if len(batch) == batchSize {
-			continue
-		}
-		s.wait(stream.Context(), deadline, count)
-		// if we're resuming because of context cancellation, we need to send and exit
-		done := false
 		select {
 		case <-stream.Context().Done():
-			done = true
-		default:
-		}
-		if done {
-			err = stream.Send(reply)
-			if err != nil {
-				return err
-			}
 			return nil
-		}
-		// if we're resuming because of a deadline, we need to send and loop
-		if !deadline.IsZero() && time.Now().After(deadline) {
-			err = stream.Send(reply)
+		case reply, active := <-replyCh:
+			if !active {
+				if req.Tail {
+					s.wait(stream.Context(), count)
+					goto Loop
+				}
+				return nil
+			}
+			err := stream.Send(reply)
 			if err != nil {
 				return err
 			}
-			reply = &emitio.ReadRowsReply{
-				Rows:            []string{},
-				LastInputRowKey: reply.LastInputRowKey,
-				LastAccumulator: reply.LastAccumulator,
-			}
-			inputCount = 0
-			outputCount = 0
 		}
-		// otherwise, we just need to loop
 	}
 }
 
@@ -214,39 +273,15 @@ type row struct {
 	value string
 }
 
-func (s *Server) transform(ctx context.Context, t Transformer, acc string, rows []row, limit uint32) (_acc string, _rows []string, last []byte, err error) {
-	_rows = []string{}
-	for _, r := range rows {
-		acc, out, _err := t.Transform(ctx, acc, r.value)
-		if _err != nil {
-			err = _err
-			return
-		}
-		_acc = acc
-		last = r.key
-		_rows = append(_rows, out...)
-		if limit != 0 && uint32(len(_rows)) >= limit {
-			return
-		}
-	}
-	return
-}
-
 // wait blocks until any of the following are true
 // * ctx closes
-// * the deadline (if non-zero) is reached
 // * the server's count no longer matches count
-func (s *Server) wait(ctx context.Context, deadline time.Time, count uint64) {
-	if !deadline.IsZero() {
-		_ctx, cancel := context.WithDeadline(ctx, deadline)
-		defer cancel()
-		ctx = _ctx
-	}
+func (s *Server) wait(ctx context.Context, count uint64) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go func() {
 		<-ctx.Done()
-		s.cond.Broadcast() // cause condition to be rechecked
+		s.cond.Broadcast() // cause condition to be rechecked so function's blocking routine may exit
 	}()
 	s.cond.L.Lock()
 	defer s.cond.L.Unlock()
@@ -262,39 +297,6 @@ func (s *Server) wait(ctx context.Context, deadline time.Time, count uint64) {
 		}
 		s.cond.Wait()
 	}
-}
-
-func (s *Server) read(start, end []byte, limit int) (batch []row, err error) {
-	batch = []row{}
-	err = s.db.View(func(txn *badger.Txn) error {
-		// the row key []byte is only valid within the txn, so we must allocate
-		// and copy data into a new slice to survive exiting the function
-		opts := badger.DefaultIteratorOptions
-		opts.PrefetchSize = 25
-		it := txn.NewIterator(opts)
-		for it.Seek(start); it.Valid(); it.Next() {
-			item := it.Item()
-			k := item.Key()
-			if len(end) > 0 && bytes.Compare(k, end) == -1 {
-				return io.EOF
-			}
-			v, err := item.Value()
-			if err != nil {
-				return err
-			}
-			r := row{
-				key:   make([]byte, len(k)),
-				value: string(v),
-			}
-			copy(r.key, k)
-			batch = append(batch, r)
-			if limit > 0 && len(batch) >= limit {
-				return nil
-			}
-		}
-		return io.EOF
-	})
-	return
 }
 
 func (s *Server) Run(ctx context.Context) error {
