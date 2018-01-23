@@ -8,10 +8,10 @@ It is generated from these files:
 	edge.proto
 
 It has these top-level messages:
+	InfoRequest
+	InfoReply
 	GetNodesRequest
 	GetNodesReply
-	GetIngressesRequest
-	GetIngressesReply
 	MakeTransformerRequest
 	MakeTransformerReply
 	ReadRowsRequest
@@ -39,13 +39,69 @@ var _ = math.Inf
 // proto package needs to be updated.
 const _ = proto.ProtoPackageIsVersion2 // please upgrade the proto package
 
+type InfoRequest struct {
+	Node string `protobuf:"bytes,1,opt,name=node" json:"node,omitempty"`
+}
+
+func (m *InfoRequest) Reset()                    { *m = InfoRequest{} }
+func (m *InfoRequest) String() string            { return proto.CompactTextString(m) }
+func (*InfoRequest) ProtoMessage()               {}
+func (*InfoRequest) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{0} }
+
+func (m *InfoRequest) GetNode() string {
+	if m != nil {
+		return m.Node
+	}
+	return ""
+}
+
+type InfoReply struct {
+	Key       string            `protobuf:"bytes,1,opt,name=key" json:"key,omitempty"`
+	Id        string            `protobuf:"bytes,2,opt,name=id" json:"id,omitempty"`
+	Origin    map[string]string `protobuf:"bytes,3,rep,name=origin" json:"origin,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Ingresses []string          `protobuf:"bytes,4,rep,name=ingresses" json:"ingresses,omitempty"`
+}
+
+func (m *InfoReply) Reset()                    { *m = InfoReply{} }
+func (m *InfoReply) String() string            { return proto.CompactTextString(m) }
+func (*InfoReply) ProtoMessage()               {}
+func (*InfoReply) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{1} }
+
+func (m *InfoReply) GetKey() string {
+	if m != nil {
+		return m.Key
+	}
+	return ""
+}
+
+func (m *InfoReply) GetId() string {
+	if m != nil {
+		return m.Id
+	}
+	return ""
+}
+
+func (m *InfoReply) GetOrigin() map[string]string {
+	if m != nil {
+		return m.Origin
+	}
+	return nil
+}
+
+func (m *InfoReply) GetIngresses() []string {
+	if m != nil {
+		return m.Ingresses
+	}
+	return nil
+}
+
 type GetNodesRequest struct {
 }
 
 func (m *GetNodesRequest) Reset()                    { *m = GetNodesRequest{} }
 func (m *GetNodesRequest) String() string            { return proto.CompactTextString(m) }
 func (*GetNodesRequest) ProtoMessage()               {}
-func (*GetNodesRequest) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{0} }
+func (*GetNodesRequest) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{2} }
 
 type GetNodesReply struct {
 	Nodes []string `protobuf:"bytes,1,rep,name=nodes" json:"nodes,omitempty"`
@@ -54,43 +110,11 @@ type GetNodesReply struct {
 func (m *GetNodesReply) Reset()                    { *m = GetNodesReply{} }
 func (m *GetNodesReply) String() string            { return proto.CompactTextString(m) }
 func (*GetNodesReply) ProtoMessage()               {}
-func (*GetNodesReply) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{1} }
+func (*GetNodesReply) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{3} }
 
 func (m *GetNodesReply) GetNodes() []string {
 	if m != nil {
 		return m.Nodes
-	}
-	return nil
-}
-
-type GetIngressesRequest struct {
-	Node string `protobuf:"bytes,1,opt,name=node" json:"node,omitempty"`
-}
-
-func (m *GetIngressesRequest) Reset()                    { *m = GetIngressesRequest{} }
-func (m *GetIngressesRequest) String() string            { return proto.CompactTextString(m) }
-func (*GetIngressesRequest) ProtoMessage()               {}
-func (*GetIngressesRequest) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{2} }
-
-func (m *GetIngressesRequest) GetNode() string {
-	if m != nil {
-		return m.Node
-	}
-	return ""
-}
-
-type GetIngressesReply struct {
-	Ingresses []string `protobuf:"bytes,1,rep,name=ingresses" json:"ingresses,omitempty"`
-}
-
-func (m *GetIngressesReply) Reset()                    { *m = GetIngressesReply{} }
-func (m *GetIngressesReply) String() string            { return proto.CompactTextString(m) }
-func (*GetIngressesReply) ProtoMessage()               {}
-func (*GetIngressesReply) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{3} }
-
-func (m *GetIngressesReply) GetIngresses() []string {
-	if m != nil {
-		return m.Ingresses
 	}
 	return nil
 }
@@ -137,27 +161,25 @@ func (m *MakeTransformerReply) GetId() string {
 }
 
 type ReadRowsRequest struct {
-	Node          string `protobuf:"bytes,1,opt,name=node" json:"node,omitempty"`
-	Start         []byte `protobuf:"bytes,2,opt,name=start,proto3" json:"start,omitempty"`
-	End           []byte `protobuf:"bytes,3,opt,name=end,proto3" json:"end,omitempty"`
-	TransformerId string `protobuf:"bytes,4,opt,name=transformer_id,json=transformerId" json:"transformer_id,omitempty"`
-	Accumulator   string `protobuf:"bytes,5,opt,name=accumulator" json:"accumulator,omitempty"`
-	// ReadRows will terminate after reading N rows worth of input. Note: transforms are not
-	// 1:1 for input to output rows, so N rows of input may result in M rows of output.
-	Limit int64 `protobuf:"varint,6,opt,name=limit" json:"limit,omitempty"`
+	Start         []byte `protobuf:"bytes,1,opt,name=start,proto3" json:"start,omitempty"`
+	End           []byte `protobuf:"bytes,2,opt,name=end,proto3" json:"end,omitempty"`
+	TransformerId string `protobuf:"bytes,3,opt,name=transformer_id,json=transformerId" json:"transformer_id,omitempty"`
+	Accumulator   string `protobuf:"bytes,4,opt,name=accumulator" json:"accumulator,omitempty"`
+	// max number of rows to be processed by the transformer before sending a ReadRowsReply
+	InputLimit uint32 `protobuf:"varint,5,opt,name=input_limit,json=inputLimit" json:"input_limit,omitempty"`
+	// max number of rows to be produced by the transformer before sending a ReadRowsReply. Note,
+	// a single input may produce many output lines, so the ReadRowsReply may have more than this
+	// limit in its reply, but once it crosses the limit the ReadRowsReply will be sent.
+	OutputLimit uint32 `protobuf:"varint,6,opt,name=output_limit,json=outputLimit" json:"output_limit,omitempty"`
+	// max duration in seconds before a ReadRowsReply is sent
+	MaxDuration float64 `protobuf:"fixed64,7,opt,name=max_duration,json=maxDuration" json:"max_duration,omitempty"`
+	Node        string  `protobuf:"bytes,8,opt,name=node" json:"node,omitempty"`
 }
 
 func (m *ReadRowsRequest) Reset()                    { *m = ReadRowsRequest{} }
 func (m *ReadRowsRequest) String() string            { return proto.CompactTextString(m) }
 func (*ReadRowsRequest) ProtoMessage()               {}
 func (*ReadRowsRequest) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{6} }
-
-func (m *ReadRowsRequest) GetNode() string {
-	if m != nil {
-		return m.Node
-	}
-	return ""
-}
 
 func (m *ReadRowsRequest) GetStart() []byte {
 	if m != nil {
@@ -187,11 +209,32 @@ func (m *ReadRowsRequest) GetAccumulator() string {
 	return ""
 }
 
-func (m *ReadRowsRequest) GetLimit() int64 {
+func (m *ReadRowsRequest) GetInputLimit() uint32 {
 	if m != nil {
-		return m.Limit
+		return m.InputLimit
 	}
 	return 0
+}
+
+func (m *ReadRowsRequest) GetOutputLimit() uint32 {
+	if m != nil {
+		return m.OutputLimit
+	}
+	return 0
+}
+
+func (m *ReadRowsRequest) GetMaxDuration() float64 {
+	if m != nil {
+		return m.MaxDuration
+	}
+	return 0
+}
+
+func (m *ReadRowsRequest) GetNode() string {
+	if m != nil {
+		return m.Node
+	}
+	return ""
 }
 
 type ReadRowsReply struct {
@@ -200,7 +243,7 @@ type ReadRowsReply struct {
 	// This is so that a client may efficiently scan to where the request left off in a subsequent
 	// call to ReadRows in the case where many rows were processed, but because of the transform, no
 	// output was generated.
-	LastInputRow []byte `protobuf:"bytes,2,opt,name=last_input_row,json=lastInputRow,proto3" json:"last_input_row,omitempty"`
+	LastInputRowKey []byte `protobuf:"bytes,2,opt,name=last_input_row_key,json=lastInputRowKey,proto3" json:"last_input_row_key,omitempty"`
 	// similar to last_input_row, the last_accumulator returns the last accumulator from a transform
 	// of intput -> output. This combined with last_row allows a client to call ReadRows again
 	// and pick up where the last call left off.
@@ -219,9 +262,9 @@ func (m *ReadRowsReply) GetRows() []string {
 	return nil
 }
 
-func (m *ReadRowsReply) GetLastInputRow() []byte {
+func (m *ReadRowsReply) GetLastInputRowKey() []byte {
 	if m != nil {
-		return m.LastInputRow
+		return m.LastInputRowKey
 	}
 	return nil
 }
@@ -234,10 +277,10 @@ func (m *ReadRowsReply) GetLastAccumulator() string {
 }
 
 func init() {
+	proto.RegisterType((*InfoRequest)(nil), "edge.InfoRequest")
+	proto.RegisterType((*InfoReply)(nil), "edge.InfoReply")
 	proto.RegisterType((*GetNodesRequest)(nil), "edge.GetNodesRequest")
 	proto.RegisterType((*GetNodesReply)(nil), "edge.GetNodesReply")
-	proto.RegisterType((*GetIngressesRequest)(nil), "edge.GetIngressesRequest")
-	proto.RegisterType((*GetIngressesReply)(nil), "edge.GetIngressesReply")
 	proto.RegisterType((*MakeTransformerRequest)(nil), "edge.MakeTransformerRequest")
 	proto.RegisterType((*MakeTransformerReply)(nil), "edge.MakeTransformerReply")
 	proto.RegisterType((*ReadRowsRequest)(nil), "edge.ReadRowsRequest")
@@ -256,9 +299,9 @@ const _ = grpc.SupportPackageIsVersion4
 
 type EdgeClient interface {
 	GetNodes(ctx context.Context, in *GetNodesRequest, opts ...grpc.CallOption) (*GetNodesReply, error)
+	Info(ctx context.Context, in *InfoRequest, opts ...grpc.CallOption) (*InfoReply, error)
 	ReadRows(ctx context.Context, in *ReadRowsRequest, opts ...grpc.CallOption) (Edge_ReadRowsClient, error)
 	MakeTransformer(ctx context.Context, in *MakeTransformerRequest, opts ...grpc.CallOption) (*MakeTransformerReply, error)
-	GetIngresses(ctx context.Context, in *GetIngressesRequest, opts ...grpc.CallOption) (*GetIngressesReply, error)
 }
 
 type edgeClient struct {
@@ -272,6 +315,15 @@ func NewEdgeClient(cc *grpc.ClientConn) EdgeClient {
 func (c *edgeClient) GetNodes(ctx context.Context, in *GetNodesRequest, opts ...grpc.CallOption) (*GetNodesReply, error) {
 	out := new(GetNodesReply)
 	err := grpc.Invoke(ctx, "/edge.Edge/GetNodes", in, out, c.cc, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *edgeClient) Info(ctx context.Context, in *InfoRequest, opts ...grpc.CallOption) (*InfoReply, error) {
+	out := new(InfoReply)
+	err := grpc.Invoke(ctx, "/edge.Edge/Info", in, out, c.cc, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -319,22 +371,13 @@ func (c *edgeClient) MakeTransformer(ctx context.Context, in *MakeTransformerReq
 	return out, nil
 }
 
-func (c *edgeClient) GetIngresses(ctx context.Context, in *GetIngressesRequest, opts ...grpc.CallOption) (*GetIngressesReply, error) {
-	out := new(GetIngressesReply)
-	err := grpc.Invoke(ctx, "/edge.Edge/GetIngresses", in, out, c.cc, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // Server API for Edge service
 
 type EdgeServer interface {
 	GetNodes(context.Context, *GetNodesRequest) (*GetNodesReply, error)
+	Info(context.Context, *InfoRequest) (*InfoReply, error)
 	ReadRows(*ReadRowsRequest, Edge_ReadRowsServer) error
 	MakeTransformer(context.Context, *MakeTransformerRequest) (*MakeTransformerReply, error)
-	GetIngresses(context.Context, *GetIngressesRequest) (*GetIngressesReply, error)
 }
 
 func RegisterEdgeServer(s *grpc.Server, srv EdgeServer) {
@@ -355,6 +398,24 @@ func _Edge_GetNodes_Handler(srv interface{}, ctx context.Context, dec func(inter
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(EdgeServer).GetNodes(ctx, req.(*GetNodesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Edge_Info_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InfoRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EdgeServer).Info(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/edge.Edge/Info",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EdgeServer).Info(ctx, req.(*InfoRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -398,24 +459,6 @@ func _Edge_MakeTransformer_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Edge_GetIngresses_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetIngressesRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(EdgeServer).GetIngresses(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/edge.Edge/GetIngresses",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(EdgeServer).GetIngresses(ctx, req.(*GetIngressesRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 var _Edge_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "edge.Edge",
 	HandlerType: (*EdgeServer)(nil),
@@ -425,12 +468,12 @@ var _Edge_serviceDesc = grpc.ServiceDesc{
 			Handler:    _Edge_GetNodes_Handler,
 		},
 		{
-			MethodName: "MakeTransformer",
-			Handler:    _Edge_MakeTransformer_Handler,
+			MethodName: "Info",
+			Handler:    _Edge_Info_Handler,
 		},
 		{
-			MethodName: "GetIngresses",
-			Handler:    _Edge_GetIngresses_Handler,
+			MethodName: "MakeTransformer",
+			Handler:    _Edge_MakeTransformer_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
@@ -446,32 +489,39 @@ var _Edge_serviceDesc = grpc.ServiceDesc{
 func init() { proto.RegisterFile("edge.proto", fileDescriptor0) }
 
 var fileDescriptor0 = []byte{
-	// 422 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x7c, 0x93, 0xcd, 0x6e, 0xd4, 0x30,
-	0x10, 0xc7, 0x9b, 0x4d, 0x5a, 0x75, 0x87, 0xfd, 0x68, 0xa7, 0x05, 0x42, 0x54, 0xa1, 0xc8, 0xa2,
-	0x28, 0xbd, 0x54, 0x7c, 0x5c, 0x10, 0x37, 0x24, 0x50, 0xb5, 0x12, 0xe5, 0x60, 0x71, 0x5f, 0x99,
-	0xb5, 0x59, 0x19, 0xb2, 0x71, 0xb0, 0x1d, 0xa2, 0x3e, 0x06, 0xef, 0xc1, 0x43, 0x22, 0x3b, 0x9b,
-	0x26, 0x0d, 0xed, 0xde, 0x66, 0x7e, 0x1e, 0xcf, 0xfc, 0x3d, 0xf9, 0x07, 0x40, 0xf0, 0xb5, 0xb8,
-	0x2c, 0xb5, 0xb2, 0x0a, 0x23, 0x17, 0x93, 0x63, 0x98, 0x5f, 0x09, 0xfb, 0x45, 0x71, 0x61, 0xa8,
-	0xf8, 0x55, 0x09, 0x63, 0xc9, 0x39, 0x4c, 0x3b, 0x54, 0xe6, 0x37, 0x78, 0x0a, 0xfb, 0x85, 0xcb,
-	0xe2, 0x20, 0x0d, 0xb3, 0x31, 0x6d, 0x12, 0x72, 0x01, 0x27, 0x57, 0xc2, 0x2e, 0x8a, 0xb5, 0x16,
-	0xc6, 0xdc, 0xde, 0x46, 0x84, 0xc8, 0x9d, 0xc7, 0x41, 0x1a, 0x64, 0x63, 0xea, 0x63, 0xf2, 0x1a,
-	0x8e, 0xef, 0x96, 0xba, 0xae, 0x67, 0x30, 0x96, 0x2d, 0xd9, 0x76, 0xee, 0x00, 0xf9, 0x0c, 0x4f,
-	0xae, 0xd9, 0x4f, 0xf1, 0x55, 0xb3, 0xc2, 0x7c, 0x57, 0x7a, 0x23, 0xf4, 0x8e, 0x01, 0xf8, 0x1c,
-	0xe0, 0x07, 0xfb, 0xcd, 0xcc, 0x4a, 0xcb, 0xd2, 0xc6, 0xa3, 0x34, 0xc8, 0x26, 0xb4, 0x47, 0xc8,
-	0x4b, 0x38, 0xfd, 0xaf, 0x9b, 0xd3, 0x30, 0x83, 0x91, 0xe4, 0xdb, 0x4e, 0x23, 0xc9, 0xc9, 0xdf,
-	0x00, 0xe6, 0x54, 0x30, 0x4e, 0x55, 0xbd, 0xeb, 0x41, 0x6e, 0x23, 0xc6, 0x32, 0xdd, 0x8e, 0x6a,
-	0x12, 0x3c, 0x82, 0x50, 0x14, 0x3c, 0x0e, 0x3d, 0x73, 0x21, 0x9e, 0xc3, 0xcc, 0x76, 0x33, 0x97,
-	0x92, 0xc7, 0x91, 0xef, 0x32, 0xed, 0xd1, 0x05, 0xc7, 0x14, 0x1e, 0xb1, 0xd5, 0xaa, 0xda, 0x54,
-	0x39, 0xb3, 0x4a, 0xc7, 0xfb, 0xbe, 0xa6, 0x8f, 0xdc, 0xc0, 0x5c, 0x6e, 0xa4, 0x8d, 0x0f, 0xd2,
-	0x20, 0x0b, 0x69, 0x93, 0x10, 0x0b, 0xd3, 0x4e, 0xad, 0x7b, 0x0f, 0x42, 0xa4, 0x55, 0xdd, 0xae,
-	0xd3, 0xc7, 0xf8, 0x02, 0x66, 0x39, 0x33, 0x76, 0x29, 0x8b, 0xb2, 0xb2, 0x4b, 0xad, 0xea, 0xad,
-	0xe8, 0x89, 0xa3, 0x0b, 0x07, 0xa9, 0xaa, 0xf1, 0x02, 0x8e, 0x7c, 0x55, 0x5f, 0x47, 0xe8, 0x75,
-	0xcc, 0x1d, 0xff, 0xd0, 0xe1, 0x37, 0x7f, 0x46, 0x10, 0x7d, 0xe2, 0x6b, 0x81, 0xef, 0xe0, 0xb0,
-	0x35, 0x0a, 0x3e, 0xbe, 0xf4, 0xd6, 0x1a, 0x78, 0x29, 0x39, 0x19, 0xe2, 0x32, 0xbf, 0x21, 0x7b,
-	0xf8, 0x1e, 0x0e, 0x5b, 0xe1, 0xed, 0xcd, 0xc1, 0xda, 0xdb, 0x9b, 0x77, 0xde, 0x47, 0xf6, 0x5e,
-	0x05, 0x78, 0x0d, 0xf3, 0xc1, 0xb7, 0xc4, 0xb3, 0xa6, 0xf6, 0x7e, 0xc3, 0x24, 0xc9, 0x03, 0xa7,
-	0x8d, 0x94, 0x8f, 0x30, 0xe9, 0x7b, 0x13, 0x9f, 0xdd, 0x2a, 0x1e, 0x5a, 0x3b, 0x79, 0x7a, 0xdf,
-	0x91, 0xef, 0xf2, 0xed, 0xc0, 0xff, 0x53, 0x6f, 0xff, 0x05, 0x00, 0x00, 0xff, 0xff, 0x70, 0x6a,
-	0xab, 0xd1, 0x61, 0x03, 0x00, 0x00,
+	// 536 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x7c, 0x54, 0x5d, 0x6f, 0xd3, 0x30,
+	0x14, 0x9d, 0xdb, 0xac, 0xb4, 0x37, 0xed, 0xba, 0x5d, 0x0a, 0x8a, 0xca, 0x04, 0x59, 0xa4, 0xa1,
+	0x22, 0x50, 0x85, 0xb6, 0x97, 0xb1, 0x37, 0x24, 0x26, 0x54, 0xb1, 0x81, 0x14, 0xf1, 0x5e, 0x99,
+	0xda, 0xab, 0xcc, 0xd2, 0xb8, 0x38, 0xce, 0xba, 0x8a, 0x9f, 0xc6, 0x2f, 0xe3, 0x01, 0x09, 0xd9,
+	0x4e, 0x9a, 0x50, 0x06, 0x6f, 0xd7, 0xe7, 0x1e, 0xdf, 0x8f, 0xe3, 0x93, 0x00, 0x70, 0x36, 0xe7,
+	0xe3, 0xa5, 0x92, 0x5a, 0xa2, 0x67, 0xe2, 0xe8, 0x08, 0xfc, 0x49, 0x7a, 0x2d, 0x63, 0xfe, 0x2d,
+	0xe7, 0x99, 0x46, 0x04, 0x2f, 0x95, 0x8c, 0x07, 0x24, 0x24, 0xa3, 0x4e, 0x6c, 0xe3, 0xe8, 0x07,
+	0x81, 0x8e, 0xe3, 0x2c, 0x93, 0x35, 0xee, 0x43, 0xf3, 0x86, 0xaf, 0x0b, 0x82, 0x09, 0x71, 0x0f,
+	0x1a, 0x82, 0x05, 0x0d, 0x0b, 0x34, 0x04, 0xc3, 0x53, 0x68, 0x49, 0x25, 0xe6, 0x22, 0x0d, 0x9a,
+	0x61, 0x73, 0xe4, 0x9f, 0x3c, 0x19, 0xdb, 0xae, 0x9b, 0x12, 0xe3, 0x4f, 0x36, 0x7b, 0x91, 0x6a,
+	0xb5, 0x8e, 0x0b, 0x2a, 0x1e, 0x42, 0x47, 0xa4, 0x73, 0xc5, 0xb3, 0x8c, 0x67, 0x81, 0x17, 0x36,
+	0x47, 0x9d, 0xb8, 0x02, 0x86, 0x6f, 0xc0, 0xaf, 0x5d, 0xba, 0x67, 0x86, 0x01, 0xec, 0xde, 0xd2,
+	0x24, 0xe7, 0xc5, 0x18, 0xee, 0x70, 0xde, 0x38, 0x23, 0xd1, 0x01, 0xf4, 0xdf, 0x73, 0xfd, 0x51,
+	0x32, 0x9e, 0x15, 0x4b, 0x46, 0xc7, 0xd0, 0xab, 0x20, 0xb3, 0xd3, 0x00, 0x76, 0xcd, 0xa6, 0x59,
+	0x40, 0x6c, 0x63, 0x77, 0x88, 0x2e, 0xe1, 0xf1, 0x15, 0xbd, 0xe1, 0x9f, 0x15, 0x4d, 0xb3, 0x6b,
+	0xa9, 0x16, 0x5c, 0xfd, 0x47, 0x25, 0x7c, 0x0a, 0xf0, 0x95, 0xde, 0xd2, 0x6c, 0xa6, 0xc4, 0x52,
+	0xdb, 0x31, 0xba, 0x71, 0x0d, 0x89, 0x9e, 0xc3, 0xe0, 0xaf, 0x6a, 0xa6, 0xb7, 0x53, 0x8f, 0x94,
+	0xea, 0x45, 0xbf, 0x08, 0xf4, 0x63, 0x4e, 0x59, 0x2c, 0x57, 0xe5, 0xc0, 0x66, 0xbe, 0x4c, 0x53,
+	0xa5, 0x2d, 0xad, 0x1b, 0xbb, 0x83, 0x51, 0x81, 0xa7, 0xac, 0x68, 0x65, 0x42, 0x3c, 0x86, 0x3d,
+	0x5d, 0xd5, 0x9f, 0x0a, 0x16, 0x34, 0x6d, 0xdd, 0x5e, 0x0d, 0x9d, 0x30, 0x0c, 0xc1, 0xa7, 0xb3,
+	0x59, 0xbe, 0xc8, 0x13, 0xaa, 0xa5, 0x0a, 0x3c, 0xcb, 0xa9, 0x43, 0xf8, 0x0c, 0x7c, 0x91, 0x2e,
+	0x73, 0x3d, 0x4d, 0xc4, 0x42, 0xe8, 0x60, 0x37, 0x24, 0xa3, 0x5e, 0x0c, 0x16, 0xba, 0x34, 0x08,
+	0x1e, 0x41, 0x57, 0xe6, 0xba, 0x62, 0xb4, 0x2c, 0xc3, 0x77, 0xd8, 0x86, 0xb2, 0xa0, 0x77, 0x53,
+	0x96, 0x2b, 0xaa, 0x85, 0x4c, 0x83, 0x07, 0x21, 0x19, 0x91, 0xd8, 0x5f, 0xd0, 0xbb, 0x77, 0x05,
+	0xb4, 0xd1, 0xb1, 0x5d, 0x73, 0xdb, 0x77, 0xe8, 0x55, 0xeb, 0x1b, 0x81, 0x10, 0x3c, 0x25, 0x57,
+	0xe5, 0xdb, 0xd8, 0x18, 0x5f, 0x02, 0x26, 0x34, 0xd3, 0x53, 0x37, 0xa4, 0x92, 0xab, 0xa9, 0xf1,
+	0x83, 0x53, 0xa2, 0x6f, 0x32, 0x13, 0x93, 0x88, 0xe5, 0xea, 0x03, 0x5f, 0xe3, 0x0b, 0xd8, 0xb7,
+	0xe4, 0xfa, 0xce, 0x4e, 0x17, 0x4b, 0x7d, 0x5b, 0xc1, 0x27, 0x3f, 0x09, 0x78, 0x17, 0x6c, 0xce,
+	0xf1, 0x0c, 0xda, 0xa5, 0x45, 0xf0, 0x91, 0xf3, 0xef, 0x96, 0x8b, 0x86, 0x0f, 0xb7, 0xe1, 0x65,
+	0xb2, 0x8e, 0x76, 0xf0, 0x15, 0x78, 0xc6, 0xe9, 0x78, 0x50, 0x77, 0xbd, 0xbb, 0xd1, 0xdf, 0xfa,
+	0x10, 0xa2, 0x1d, 0x3c, 0x87, 0x76, 0xb9, 0x6d, 0xd9, 0x67, 0xeb, 0xf1, 0xcb, 0x3e, 0x7f, 0x88,
+	0x12, 0xed, 0xbc, 0x26, 0x78, 0x05, 0xfd, 0x2d, 0x47, 0xe1, 0xa1, 0xe3, 0xde, 0x6f, 0xdb, 0xe1,
+	0xf0, 0x1f, 0x59, 0x5b, 0xf0, 0x4b, 0xcb, 0xfe, 0x16, 0x4e, 0x7f, 0x07, 0x00, 0x00, 0xff, 0xff,
+	0x6d, 0x9a, 0x2a, 0x79, 0x24, 0x04, 0x00, 0x00,
 }

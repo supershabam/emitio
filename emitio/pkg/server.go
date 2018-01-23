@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 
 	"github.com/dgraph-io/badger"
@@ -120,7 +121,10 @@ func (s *Server) ReadRows(req *emitio.ReadRowsRequest, stream emitio.Emitio_Read
 		s.cond.L.Lock()
 		count := s.count
 		s.cond.L.Unlock()
-		batch, rerr := s.read(reply.LastInputRowKey, req.End, batchSize)
+		start := make([]byte, len(reply.LastInputRowKey)+1)
+		copy(start, reply.LastInputRowKey)
+		start[len(start)-1] = 0x00
+		batch, rerr := s.read(start, req.End, batchSize)
 		if rerr != nil {
 			if rerr != io.EOF {
 				return rerr
@@ -128,7 +132,11 @@ func (s *Server) ReadRows(req *emitio.ReadRowsRequest, stream emitio.Emitio_Read
 		}
 		// clip batch to max allowed by input limit if set
 		if req.InputLimit > 0 && inputCount+uint32(len(batch)) >= req.InputLimit {
-			batch = batch[:int(req.InputLimit)-len(batch)]
+			zap.L().Debug("slicing batch",
+				zap.Uint32("input limit", req.InputLimit),
+				zap.Int("len batch", len(batch)),
+			)
+			batch = batch[:req.InputLimit-inputCount]
 		}
 		var outputLimit uint32
 		if req.OutputLimit > 0 {
