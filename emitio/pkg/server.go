@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 
 	"github.com/dgraph-io/badger"
@@ -94,33 +95,42 @@ func (s *Server) batch(ctx context.Context, start, end []byte, maxLen int) (chan
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
 		defer close(ch)
-		var last []byte
 		batch := make([]row, 0, maxLen)
-		flush := func() bool {
+		flush := func() {
+			if len(batch) == 0 {
+				return
+			}
 			select {
 			case <-ctx.Done():
-				return false
 			case ch <- batch:
 				batch = make([]row, 0, maxLen)
-				return true
 			}
 		}
 		for {
+			// escape hatch for when context cancels
 			select {
 			case <-ctx.Done():
 				return nil
 			default:
 			}
 			err := s.db.View(func(txn *badger.Txn) error {
-				// the row key []byte is only valid within the txn, so we must allocate
-				// and copy data into a new slice to survive exiting the function
+				// last points to the last read row key value but is only valid within
+				// the txn.
+				var last []byte
+				defer func() {
+					start = make([]byte, len(last)+1)
+					copy(start, last)
+					// start the next iteration at the next possible key
+					start[len(start)-1] = 0x00
+				}()
 				opts := badger.DefaultIteratorOptions
 				opts.PrefetchSize = 25
 				it := txn.NewIterator(opts)
 				for it.Seek(start); it.Valid(); it.Next() {
 					item := it.Item()
 					k := item.Key()
-					if len(end) > 0 && bytes.Compare(k, end) == -1 {
+					// if there is an end AND k >= end
+					if len(end) > 0 && bytes.Compare(k, end) >= 0 {
 						return io.EOF
 					}
 					v, err := item.Value()
@@ -140,17 +150,13 @@ func (s *Server) batch(ctx context.Context, start, end []byte, maxLen int) (chan
 				}
 				return io.EOF
 			})
-			if err != nil && err == io.EOF {
-				flush()
-				return nil
-			}
-			if err != nil {
+			if err != nil && err != io.EOF {
 				return errors.Wrap(err, "batch db view")
 			}
-			start = make([]byte, len(last)+1)
-			copy(start, last)
-			start[len(start)-1] = 0x00
 			flush()
+			if err == io.EOF {
+				return nil
+			}
 		}
 	})
 	return ch, eg.Wait
@@ -175,7 +181,13 @@ func (s *Server) transform(
 			LastAccumulator: acc,
 			LastInputKey:    last,
 		}
+		l := zap.L().With(
+			zap.ByteString("last_input_key", reply.LastInputKey),
+			zap.String("last_accumulator", reply.LastAccumulator),
+		)
+		l.Debug("starting loop")
 		flush := func() bool {
+			l.Debug("starting flush", zap.Int("reply_rows_len", len(reply.Rows)))
 			select {
 			case <-ctx.Done():
 				return false
@@ -195,11 +207,13 @@ func (s *Server) transform(
 				return nil
 			case rows, active := <-rowsCh:
 				if !active {
+					zap.L().Debug("rowsCh has terminated")
 					if !flush() {
 						return nil
 					}
 					return wait()
 				}
+				zap.L().Debug("rows received on rowsCh", zap.Int("rows_len", len(rows)))
 				for _, r := range rows {
 					acc, out, err := t.Transform(ctx, acc, r.value)
 					if err != nil {
@@ -254,12 +268,14 @@ Loop:
 			return nil
 		case reply, active := <-replyCh:
 			if !active {
+				zap.L().Debug("replyCh has terminated")
 				if req.Tail {
 					s.wait(stream.Context(), count)
 					goto Loop
 				}
 				return nil
 			}
+			zap.L().Debug("received reply from replyCh")
 			err := stream.Send(reply)
 			if err != nil {
 				return err

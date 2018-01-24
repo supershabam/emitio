@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/dgraph-io/badger"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/supershabam/emitio/emitio/pb/emitio"
@@ -68,6 +69,155 @@ func TestInfo(t *testing.T) {
 	}, reply)
 }
 
+func TestBatch(t *testing.T) {
+	t.Run("empty database", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		path, err := ioutil.TempDir("", "emitio")
+		require.Nil(t, err)
+		db, err := ParseStorage(fmt.Sprintf("file:///%s", path))
+		require.Nil(t, err)
+		s, err := NewServer(ctx, WithDB(db))
+		require.Nil(t, err)
+		rowCh, wait := s.batch(ctx, []byte{}, []byte{}, 1)
+		rows, active := <-rowCh
+		require.Nil(t, rows)
+		require.False(t, active)
+		err = wait()
+		require.Nil(t, err)
+	})
+	t.Run("one at a time with db of two", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		path, err := ioutil.TempDir("", "emitio")
+		require.Nil(t, err)
+		db, err := ParseStorage(fmt.Sprintf("file:///%s", path))
+		require.Nil(t, err)
+		err = db.Update(func(txn *badger.Txn) error {
+			err := txn.Set([]byte("b"), []byte("second"))
+			if err != nil {
+				return err
+			}
+			err = txn.Set([]byte("a"), []byte("first"))
+			if err != nil {
+				return err
+			}
+			return nil
+		})
+		require.Nil(t, err)
+		s, err := NewServer(ctx, WithDB(db))
+		require.Nil(t, err)
+		rowCh, wait := s.batch(ctx, []byte{}, []byte{}, 1)
+		rows, active := <-rowCh
+		require.True(t, active)
+		require.Equal(t, rows, []row{{key: []byte("a"), value: "first"}})
+		rows, active = <-rowCh
+		require.True(t, active)
+		require.Equal(t, rows, []row{{key: []byte("b"), value: "second"}})
+		rows, active = <-rowCh
+		require.False(t, active)
+		require.Nil(t, rows)
+		err = wait()
+		require.Nil(t, err)
+	})
+	t.Run("three at a time with db of two", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		path, err := ioutil.TempDir("", "emitio")
+		require.Nil(t, err)
+		db, err := ParseStorage(fmt.Sprintf("file:///%s", path))
+		require.Nil(t, err)
+		err = db.Update(func(txn *badger.Txn) error {
+			err := txn.Set([]byte("b"), []byte("second"))
+			if err != nil {
+				return err
+			}
+			err = txn.Set([]byte("a"), []byte("first"))
+			if err != nil {
+				return err
+			}
+			return nil
+		})
+		require.Nil(t, err)
+		s, err := NewServer(ctx, WithDB(db))
+		require.Nil(t, err)
+		rowCh, wait := s.batch(ctx, []byte{}, []byte{}, 3)
+		rows, active := <-rowCh
+		require.True(t, active)
+		require.Equal(t, rows, []row{
+			{key: []byte("a"), value: "first"},
+			{key: []byte("b"), value: "second"},
+		})
+		rows, active = <-rowCh
+		require.False(t, active)
+		require.Nil(t, rows)
+		err = wait()
+		require.Nil(t, err)
+	})
+	t.Run("three at a time with db of two ending after first entry", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		path, err := ioutil.TempDir("", "emitio")
+		require.Nil(t, err)
+		db, err := ParseStorage(fmt.Sprintf("file:///%s", path))
+		require.Nil(t, err)
+		err = db.Update(func(txn *badger.Txn) error {
+			err := txn.Set([]byte("b"), []byte("second"))
+			if err != nil {
+				return err
+			}
+			err = txn.Set([]byte("a"), []byte("first"))
+			if err != nil {
+				return err
+			}
+			return nil
+		})
+		require.Nil(t, err)
+		s, err := NewServer(ctx, WithDB(db))
+		require.Nil(t, err)
+		rowCh, wait := s.batch(ctx, []byte{}, []byte("b"), 3)
+		rows, active := <-rowCh
+		require.True(t, active)
+		require.Equal(t, rows, []row{{key: []byte("a"), value: "first"}})
+		rows, active = <-rowCh
+		require.False(t, active)
+		require.Nil(t, rows)
+		err = wait()
+		require.Nil(t, err)
+	})
+	t.Run("three at a time with db of two starting after first entry", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		path, err := ioutil.TempDir("", "emitio")
+		require.Nil(t, err)
+		db, err := ParseStorage(fmt.Sprintf("file:///%s", path))
+		require.Nil(t, err)
+		err = db.Update(func(txn *badger.Txn) error {
+			err := txn.Set([]byte("b"), []byte("second"))
+			if err != nil {
+				return err
+			}
+			err = txn.Set([]byte("a"), []byte("first"))
+			if err != nil {
+				return err
+			}
+			return nil
+		})
+		require.Nil(t, err)
+		s, err := NewServer(ctx, WithDB(db))
+		require.Nil(t, err)
+		rowCh, wait := s.batch(ctx, []byte("b"), []byte(""), 3)
+		rows, active := <-rowCh
+		require.True(t, active)
+		require.Equal(t, rows, []row{{key: []byte("b"), value: "second"}})
+		rows, active = <-rowCh
+		require.False(t, active)
+		require.Nil(t, rows)
+		err = wait()
+		require.Nil(t, err)
+	})
+}
+
 func TestGetOne(t *testing.T) {
 	l, _ := zap.NewDevelopment()
 	zap.ReplaceGlobals(l)
@@ -81,10 +231,11 @@ func TestGetOne(t *testing.T) {
 	mtr, err := c.MakeTransformer(ctx, &emitio.MakeTransformerRequest{
 		Javascript: []byte(`
 function transform(acc, line) {
-	return [acc, [line]]
+	return [acc, []]
 }`),
 	})
 	require.Nil(t, err)
+	time.Sleep(time.Second)
 	stream, err := c.Read(ctx, &emitio.ReadRequest{
 		Start:         []byte{},
 		TransformerId: mtr.Id,
