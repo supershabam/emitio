@@ -70,152 +70,167 @@ func TestInfo(t *testing.T) {
 }
 
 func TestBatch(t *testing.T) {
-	t.Run("empty database", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		path, err := ioutil.TempDir("", "emitio")
-		require.Nil(t, err)
-		db, err := ParseStorage(fmt.Sprintf("file:///%s", path))
-		require.Nil(t, err)
-		s, err := NewServer(ctx, WithDB(db))
-		require.Nil(t, err)
-		rowCh, wait := s.batch(ctx, []byte{}, []byte{}, 1)
-		rows, active := <-rowCh
-		require.Nil(t, rows)
-		require.False(t, active)
-		err = wait()
-		require.Nil(t, err)
-	})
-	t.Run("one at a time with db of two", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		path, err := ioutil.TempDir("", "emitio")
-		require.Nil(t, err)
-		db, err := ParseStorage(fmt.Sprintf("file:///%s", path))
-		require.Nil(t, err)
-		err = db.Update(func(txn *badger.Txn) error {
-			err := txn.Set([]byte("b"), []byte("second"))
-			if err != nil {
-				return err
+	type dbe struct {
+		key   []byte
+		value []byte
+	}
+	tt := []struct {
+		name    string
+		db      []dbe
+		size    int
+		start   []byte
+		end     []byte
+		expects [][]row
+	}{
+		{
+			name:    "empty database",
+			db:      []dbe{},
+			start:   []byte{},
+			end:     []byte{},
+			size:    1,
+			expects: [][]row{},
+		},
+		{
+			name: "entries = 2, size = 1",
+			db: []dbe{
+				{
+					key:   []byte("b"),
+					value: []byte("second"),
+				},
+				{
+					key:   []byte("a"),
+					value: []byte("first"),
+				},
+			},
+			start: []byte{},
+			end:   []byte{},
+			size:  1,
+			expects: [][]row{
+				[]row{
+					{
+						key:   []byte("a"),
+						value: "first",
+					},
+				},
+				[]row{
+					{
+						key:   []byte("b"),
+						value: "second",
+					},
+				},
+			},
+		},
+		{
+			name: "entries = 2, size = 3",
+			db: []dbe{
+				{
+					key:   []byte("b"),
+					value: []byte("second"),
+				},
+				{
+					key:   []byte("a"),
+					value: []byte("first"),
+				},
+			},
+			start: []byte{},
+			end:   []byte{},
+			size:  3,
+			expects: [][]row{
+				[]row{
+					{
+						key:   []byte("a"),
+						value: "first",
+					},
+					{
+						key:   []byte("b"),
+						value: "second",
+					},
+				},
+			},
+		},
+		{
+			name: "entries = 2, size = 3, start = b",
+			db: []dbe{
+				{
+					key:   []byte("b"),
+					value: []byte("second"),
+				},
+				{
+					key:   []byte("a"),
+					value: []byte("first"),
+				},
+			},
+			start: []byte("b"),
+			end:   []byte{},
+			size:  3,
+			expects: [][]row{
+				[]row{
+					{
+						key:   []byte("b"),
+						value: "second",
+					},
+				},
+			},
+		},
+		{
+			name: "entries = 2, size = 3, end = b",
+			db: []dbe{
+				{
+					key:   []byte("b"),
+					value: []byte("second"),
+				},
+				{
+					key:   []byte("a"),
+					value: []byte("first"),
+				},
+			},
+			start: []byte{},
+			end:   []byte("b"),
+			size:  3,
+			expects: [][]row{
+				[]row{
+					{
+						key:   []byte("a"),
+						value: "first",
+					},
+				},
+			},
+		},
+	}
+	for _, tc := range tt {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			path, err := ioutil.TempDir("", "emitio")
+			require.Nil(t, err)
+			db, err := ParseStorage(fmt.Sprintf("file:///%s", path))
+			require.Nil(t, err)
+			err = db.Update(func(txn *badger.Txn) error {
+				for _, e := range tc.db {
+					err := txn.Set(e.key, e.value)
+					if err != nil {
+						return err
+					}
+				}
+				return nil
+			})
+			require.Nil(t, err)
+			s, err := NewServer(ctx, WithDB(db))
+			require.Nil(t, err)
+			rowsCh, wait := s.batch(ctx, tc.start, tc.end, tc.size)
+			for _, expect := range tc.expects {
+				rows, active := <-rowsCh
+				require.True(t, active)
+				require.Equal(t, expect, rows)
 			}
-			err = txn.Set([]byte("a"), []byte("first"))
-			if err != nil {
-				return err
-			}
-			return nil
+			rows, active := <-rowsCh
+			require.Nil(t, rows)
+			require.False(t, active)
+			err = wait()
+			require.Nil(t, err)
 		})
-		require.Nil(t, err)
-		s, err := NewServer(ctx, WithDB(db))
-		require.Nil(t, err)
-		rowCh, wait := s.batch(ctx, []byte{}, []byte{}, 1)
-		rows, active := <-rowCh
-		require.True(t, active)
-		require.Equal(t, rows, []row{{key: []byte("a"), value: "first"}})
-		rows, active = <-rowCh
-		require.True(t, active)
-		require.Equal(t, rows, []row{{key: []byte("b"), value: "second"}})
-		rows, active = <-rowCh
-		require.False(t, active)
-		require.Nil(t, rows)
-		err = wait()
-		require.Nil(t, err)
-	})
-	t.Run("three at a time with db of two", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		path, err := ioutil.TempDir("", "emitio")
-		require.Nil(t, err)
-		db, err := ParseStorage(fmt.Sprintf("file:///%s", path))
-		require.Nil(t, err)
-		err = db.Update(func(txn *badger.Txn) error {
-			err := txn.Set([]byte("b"), []byte("second"))
-			if err != nil {
-				return err
-			}
-			err = txn.Set([]byte("a"), []byte("first"))
-			if err != nil {
-				return err
-			}
-			return nil
-		})
-		require.Nil(t, err)
-		s, err := NewServer(ctx, WithDB(db))
-		require.Nil(t, err)
-		rowCh, wait := s.batch(ctx, []byte{}, []byte{}, 3)
-		rows, active := <-rowCh
-		require.True(t, active)
-		require.Equal(t, rows, []row{
-			{key: []byte("a"), value: "first"},
-			{key: []byte("b"), value: "second"},
-		})
-		rows, active = <-rowCh
-		require.False(t, active)
-		require.Nil(t, rows)
-		err = wait()
-		require.Nil(t, err)
-	})
-	t.Run("three at a time with db of two ending after first entry", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		path, err := ioutil.TempDir("", "emitio")
-		require.Nil(t, err)
-		db, err := ParseStorage(fmt.Sprintf("file:///%s", path))
-		require.Nil(t, err)
-		err = db.Update(func(txn *badger.Txn) error {
-			err := txn.Set([]byte("b"), []byte("second"))
-			if err != nil {
-				return err
-			}
-			err = txn.Set([]byte("a"), []byte("first"))
-			if err != nil {
-				return err
-			}
-			return nil
-		})
-		require.Nil(t, err)
-		s, err := NewServer(ctx, WithDB(db))
-		require.Nil(t, err)
-		rowCh, wait := s.batch(ctx, []byte{}, []byte("b"), 3)
-		rows, active := <-rowCh
-		require.True(t, active)
-		require.Equal(t, rows, []row{{key: []byte("a"), value: "first"}})
-		rows, active = <-rowCh
-		require.False(t, active)
-		require.Nil(t, rows)
-		err = wait()
-		require.Nil(t, err)
-	})
-	t.Run("three at a time with db of two starting after first entry", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		path, err := ioutil.TempDir("", "emitio")
-		require.Nil(t, err)
-		db, err := ParseStorage(fmt.Sprintf("file:///%s", path))
-		require.Nil(t, err)
-		err = db.Update(func(txn *badger.Txn) error {
-			err := txn.Set([]byte("b"), []byte("second"))
-			if err != nil {
-				return err
-			}
-			err = txn.Set([]byte("a"), []byte("first"))
-			if err != nil {
-				return err
-			}
-			return nil
-		})
-		require.Nil(t, err)
-		s, err := NewServer(ctx, WithDB(db))
-		require.Nil(t, err)
-		rowCh, wait := s.batch(ctx, []byte("b"), []byte(""), 3)
-		rows, active := <-rowCh
-		require.True(t, active)
-		require.Equal(t, rows, []row{{key: []byte("b"), value: "second"}})
-		rows, active = <-rowCh
-		require.False(t, active)
-		require.Nil(t, rows)
-		err = wait()
-		require.Nil(t, err)
-	})
+	}
 }
 
 func TestGetOne(t *testing.T) {
