@@ -162,13 +162,13 @@ func (s *Server) batch(ctx context.Context, start, end []byte, maxLen int) (chan
 	return ch, eg.Wait
 }
 
-func (s *Server) transform(
+func transform(
 	ctx context.Context,
 	t Transformer,
 	last []byte,
 	acc string,
 	rowsCh <-chan []row,
-	wait Wait, maxInput, maxOutput int,
+	maxInput, maxOutput int,
 	maxDelay time.Duration,
 ) (chan *emitio.ReadReply, Wait) {
 	ch := make(chan *emitio.ReadReply)
@@ -181,51 +181,52 @@ func (s *Server) transform(
 			LastAccumulator: acc,
 			LastInputKey:    last,
 		}
-		l := zap.L().With(
-			zap.ByteString("last_input_key", reply.LastInputKey),
-			zap.String("last_accumulator", reply.LastAccumulator),
-		)
-		l.Debug("starting loop")
-		flush := func() bool {
-			l.Debug("starting flush", zap.Int("reply_rows_len", len(reply.Rows)))
+		dirty := false
+		timer := time.NewTimer(maxDelay)
+		flush := func() {
+			timer.Reset(maxDelay)
+			if !dirty {
+				return
+			}
 			select {
 			case <-ctx.Done():
-				return false
 			case ch <- reply:
 				inputCount = 0
+				dirty = false
 				reply = &emitio.ReadReply{
 					Rows:            []string{},
 					LastAccumulator: reply.LastAccumulator,
 					LastInputKey:    reply.LastInputKey,
 				}
-				return true
 			}
 		}
 		for {
 			select {
 			case <-ctx.Done():
 				return nil
+			case <-timer.C:
+				flush()
 			case rows, active := <-rowsCh:
 				if !active {
-					zap.L().Debug("rowsCh has terminated")
-					if !flush() {
-						return nil
-					}
-					return wait()
+					flush()
+					return nil
 				}
-				zap.L().Debug("rows received on rowsCh", zap.Int("rows_len", len(rows)))
 				for _, r := range rows {
-					acc, out, err := t.Transform(ctx, acc, r.value)
+					acc, out, err := t.Transform(ctx, reply.LastAccumulator, r.value)
 					if err != nil {
 						return errors.Wrap(err, "transform")
 					}
+					dirty = true
 					inputCount++
 					reply.LastAccumulator = acc
 					reply.LastInputKey = r.key
 					reply.Rows = append(reply.Rows, out...)
-					if inputCount > maxInput || len(reply.Rows) > maxOutput {
-						if !flush() {
+					if inputCount >= maxInput || len(reply.Rows) >= maxOutput {
+						flush()
+						select {
+						case <-ctx.Done():
 							return nil
+						default:
 						}
 					}
 				}
@@ -250,14 +251,13 @@ Loop:
 	s.cond.L.Lock()
 	count := s.count
 	s.cond.L.Unlock()
-	rowsCh, wait := s.batch(stream.Context(), req.Start, req.End, 25)
-	replyCh, wait := s.transform(
+	rowsCh, _ := s.batch(stream.Context(), req.Start, req.End, 25)
+	replyCh, _ := transform(
 		stream.Context(),
 		t,
 		req.Start,
 		req.Accumulator,
 		rowsCh,
-		wait,
 		int(req.InputLimit),
 		int(req.OutputLimit),
 		time.Duration(req.DurationLimit*1e9),

@@ -233,6 +233,183 @@ func TestBatch(t *testing.T) {
 	}
 }
 
+func TestTransformMaxInput(t *testing.T) {
+	ctx := context.Background()
+	tr, err := transformers.NewJS(`
+function transform(acc, line) {
+	return [acc + acc, [line, line]]
+}
+`)
+	require.Nil(t, err)
+	last := []byte("start")
+	acc := "1"
+	rowsCh := make(chan []row)
+	go func() {
+		defer close(rowsCh)
+		select {
+		case <-ctx.Done():
+			return
+		case rowsCh <- []row{
+			{
+				key:   []byte("b"),
+				value: "first",
+			},
+			{
+				key:   []byte("c"),
+				value: "second",
+			},
+		}:
+		}
+	}()
+	maxInput := 1
+	maxOutput := 10
+	maxDelay := time.Second
+	replyCh, wait := transform(ctx, tr, last, acc, rowsCh, maxInput, maxOutput, maxDelay)
+	reply, active := <-replyCh
+	require.True(t, active)
+	require.Equal(t, &emitio.ReadReply{
+		Rows: []string{
+			"first",
+			"first",
+		},
+		LastAccumulator: "11",
+		LastInputKey:    []byte("b"),
+	}, reply)
+	reply, active = <-replyCh
+	require.True(t, active)
+	require.Equal(t, &emitio.ReadReply{
+		Rows: []string{
+			"second",
+			"second",
+		},
+		LastAccumulator: "1111",
+		LastInputKey:    []byte("c"),
+	}, reply)
+	reply, active = <-replyCh
+	require.False(t, active)
+	require.Nil(t, reply)
+	err = wait()
+	require.Nil(t, err)
+}
+
+func TestTransformMaxOutput(t *testing.T) {
+	ctx := context.Background()
+	tr, err := transformers.NewJS(`
+function transform(acc, line) {
+	return [acc + acc, [line, line]]
+}
+`)
+	require.Nil(t, err)
+	last := []byte("start")
+	acc := "1"
+	rowsCh := make(chan []row)
+	go func() {
+		defer close(rowsCh)
+		select {
+		case <-ctx.Done():
+			return
+		case rowsCh <- []row{
+			{
+				key:   []byte("a"),
+				value: "first",
+			},
+			{
+				key:   []byte("b"),
+				value: "second",
+			},
+		}:
+		}
+	}()
+	maxInput := 10
+	maxOutput := 3
+	maxDelay := time.Second
+	replyCh, wait := transform(ctx, tr, last, acc, rowsCh, maxInput, maxOutput, maxDelay)
+	reply, active := <-replyCh
+	require.True(t, active)
+	require.Equal(t, &emitio.ReadReply{
+		Rows: []string{
+			"first",
+			"first",
+			"second",
+			"second",
+		},
+		LastAccumulator: "1111",
+		LastInputKey:    []byte("b"),
+	}, reply)
+	reply, active = <-replyCh
+	require.False(t, active)
+	require.Nil(t, reply)
+	err = wait()
+	require.Nil(t, err)
+}
+
+func TestTransformMaxDuration(t *testing.T) {
+	ctx := context.Background()
+	tr, err := transformers.NewJS(`
+function transform(acc, line) {
+	return [acc + acc, [line, line]]
+}
+`)
+	require.Nil(t, err)
+	last := []byte("start")
+	acc := "1"
+	rowsCh := make(chan []row)
+	go func() {
+		defer close(rowsCh)
+		rowsList := [][]row{
+			{
+				{
+					key:   []byte("a"),
+					value: "first",
+				},
+			},
+			{
+				{
+					key:   []byte("b"),
+					value: "second",
+				},
+			},
+		}
+		for _, rows := range rowsList {
+			select {
+			case <-ctx.Done():
+				return
+			case rowsCh <- rows:
+				time.Sleep(time.Millisecond * 200)
+			}
+		}
+	}()
+	maxInput := 10
+	maxOutput := 10
+	maxDelay := time.Millisecond * 100
+	replyCh, wait := transform(ctx, tr, last, acc, rowsCh, maxInput, maxOutput, maxDelay)
+	reply, active := <-replyCh
+	require.True(t, active)
+	require.Equal(t, &emitio.ReadReply{
+		Rows: []string{
+			"first",
+			"first",
+		},
+		LastAccumulator: "11",
+		LastInputKey:    []byte("a"),
+	}, reply)
+	reply, active = <-replyCh
+	require.True(t, active)
+	require.Equal(t, &emitio.ReadReply{
+		Rows: []string{
+			"second",
+			"second",
+		},
+		LastAccumulator: "1111",
+		LastInputKey:    []byte("b"),
+	}, reply)
+	reply, active = <-replyCh
+	require.False(t, active)
+	require.Nil(t, reply)
+	err = wait()
+	require.Nil(t, err)
+}
+
 func TestGetOne(t *testing.T) {
 	l, _ := zap.NewDevelopment()
 	zap.ReplaceGlobals(l)
