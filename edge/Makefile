@@ -4,11 +4,11 @@ SRCS = $(shell find . -type f -iname '*.go')
 
 bin: target/edge_linux_amd64
 
-generate:
+generate: ../emitio/emitio.proto edge.proto
 	protoc -I../emitio emitio.proto --go_out=plugins=grpc:pb/emitio
 	protoc -I./ edge.proto --go_out=plugins=grpc:pb/edge
 
-target/edge_linux_amd64: $(SRCS) Makefile
+target/edge_linux_amd64: $(SRCS) Makefile generate
 	docker run \
 		--rm \
 		-v $(shell pwd):/go/src/github.com/supershabam/emitio/edge \

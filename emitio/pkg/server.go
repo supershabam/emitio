@@ -5,10 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
+
+	"google.golang.org/grpc/codes"
 
 	"github.com/dgraph-io/badger"
 	"github.com/pkg/errors"
@@ -16,21 +18,32 @@ import (
 	"github.com/supershabam/emitio/emitio/pb/emitio"
 	"github.com/supershabam/emitio/emitio/pkg/transformers"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
 )
 
 var _ emitio.EmitioServer = &Server{}
 
+// Server implements the emitio server defined in proto. It allows a remote to query information
+// about the running state of the server and also to query information out of the embedded key/value
+// store and mutate that information server-side via javascript.
 type Server struct {
 	db           *badger.DB
+	key          string
+	id           string
 	ingresses    []Ingresser
+	origin       map[string]string
 	transformers sync.Map
-	cond         sync.Cond
-	count        uint64
+
+	// cond protects count which is the count of rows written to the server
+	cond  sync.Cond
+	count uint64
 }
 
+// NewServer initializes a server and will error if dependencies are missing.
 func NewServer(ctx context.Context, opts ...ServerOption) (*Server, error) {
 	s := &Server{
 		ingresses: []Ingresser{},
+		origin:    map[string]string{},
 		cond: sync.Cond{
 			L: &sync.Mutex{},
 		},
@@ -42,6 +55,272 @@ func NewServer(ctx context.Context, opts ...ServerOption) (*Server, error) {
 		}
 	}
 	return s, nil
+}
+
+// Info returns the API key, id, origin tags, and ingresses that define this running server.
+func (s *Server) Info(ctx context.Context, req *emitio.InfoRequest) (*emitio.InfoReply, error) {
+	ingresses := []string{}
+	for _, i := range s.ingresses {
+		ingresses = append(ingresses, i.URI())
+	}
+	return &emitio.InfoReply{
+		Key:       s.key,
+		Id:        s.id,
+		Origin:    s.origin,
+		Ingresses: ingresses,
+	}, nil
+}
+
+// MakeTransformer accepts a javascript payload that is expected to have a global
+// "transform(acc:string, inputs:[string]):(string,[string])" method.
+// TODO content hash the javascript and only create a new VM if there isn't one
+// already created for the provided javascript. It is possible for the same script to
+// be sent to us.
+// TODO expire unused javascript VMs
+func (s *Server) MakeTransformer(ctx context.Context, req *emitio.MakeTransformerRequest) (*emitio.MakeTransformerReply, error) {
+	id := uuid.NewV4().String()
+	t, err := transformers.NewJS(string(req.Javascript))
+	if err != nil {
+		return nil, errors.Wrap(err, "new js")
+	}
+	s.transformers.Store(id, t)
+	return &emitio.MakeTransformerReply{
+		Id: id,
+	}, nil
+}
+
+func (s *Server) batch(ctx context.Context, start, end []byte, maxLen int) (chan []row, Wait) {
+	ch := make(chan []row)
+	eg, ctx := errgroup.WithContext(ctx)
+	eg.Go(func() error {
+		defer close(ch)
+		batch := make([]row, 0, maxLen)
+		flush := func() {
+			if len(batch) == 0 {
+				return
+			}
+			select {
+			case <-ctx.Done():
+			case ch <- batch:
+				batch = make([]row, 0, maxLen)
+			}
+		}
+		for {
+			// escape hatch for when context cancels
+			select {
+			case <-ctx.Done():
+				return nil
+			default:
+			}
+			err := s.db.View(func(txn *badger.Txn) error {
+				// last points to the last read row key value but is only valid within
+				// the txn.
+				var last []byte
+				defer func() {
+					start = make([]byte, len(last)+1)
+					copy(start, last)
+					// start the next iteration at the next possible key
+					start[len(start)-1] = 0x00
+				}()
+				opts := badger.DefaultIteratorOptions
+				opts.PrefetchSize = 25
+				it := txn.NewIterator(opts)
+				for it.Seek(start); it.Valid(); it.Next() {
+					item := it.Item()
+					k := item.Key()
+					// if there is an end AND k >= end
+					if len(end) > 0 && bytes.Compare(k, end) >= 0 {
+						return io.EOF
+					}
+					v, err := item.Value()
+					if err != nil {
+						return err
+					}
+					r := row{
+						key:   make([]byte, len(k)),
+						value: string(v),
+					}
+					copy(r.key, k)
+					last = r.key
+					batch = append(batch, r)
+					if len(batch) >= maxLen {
+						return nil
+					}
+				}
+				return io.EOF
+			})
+			if err != nil && err != io.EOF {
+				return errors.Wrap(err, "batch db view")
+			}
+			flush()
+			if err == io.EOF {
+				return nil
+			}
+		}
+	})
+	return ch, eg.Wait
+}
+
+func transform(
+	ctx context.Context,
+	t Transformer,
+	last []byte,
+	acc string,
+	rowsCh <-chan []row,
+	maxInput, maxOutput int,
+	maxDelay time.Duration,
+) (chan *emitio.ReadReply, Wait) {
+	ch := make(chan *emitio.ReadReply)
+	eg, ctx := errgroup.WithContext(ctx)
+	eg.Go(func() error {
+		defer close(ch)
+		inputCount := 0
+		reply := &emitio.ReadReply{
+			Rows:            []string{},
+			LastAccumulator: acc,
+			LastInputKey:    last,
+		}
+		dirty := false
+		timer := time.NewTimer(maxDelay)
+		flush := func() {
+			timer.Reset(maxDelay)
+			if !dirty {
+				return
+			}
+			select {
+			case <-ctx.Done():
+			case ch <- reply:
+				inputCount = 0
+				dirty = false
+				reply = &emitio.ReadReply{
+					Rows:            []string{},
+					LastAccumulator: reply.LastAccumulator,
+					LastInputKey:    reply.LastInputKey,
+				}
+			}
+		}
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-timer.C:
+				flush()
+			case rows, active := <-rowsCh:
+				if !active {
+					flush()
+					return nil
+				}
+				for _, r := range rows {
+					acc, out, err := t.Transform(ctx, reply.LastAccumulator, r.value)
+					if err != nil {
+						return errors.Wrap(err, "transform")
+					}
+					dirty = true
+					inputCount++
+					reply.LastAccumulator = acc
+					reply.LastInputKey = r.key
+					reply.Rows = append(reply.Rows, out...)
+					if inputCount >= maxInput || len(reply.Rows) >= maxOutput {
+						flush()
+						select {
+						case <-ctx.Done():
+							return nil
+						default:
+						}
+					}
+				}
+			}
+		}
+	})
+	return ch, eg.Wait
+}
+
+// Read queries the embedded key/value database and streams results back to the client. The frequency
+// at which responses are sent can be tuned by setting the input_limit, output_limit, and max_duration variables.
+func (s *Server) Read(req *emitio.ReadRequest, stream emitio.Emitio_ReadServer) error {
+	ti, ok := s.transformers.Load(req.TransformerId)
+	if !ok {
+		return grpc.Errorf(codes.NotFound, "transformer id not found")
+	}
+	t, ok := ti.(Transformer)
+	if !ok {
+		panic(fmt.Sprintf("expected transformer type to be set into map but found %T", ti))
+	}
+Loop:
+	s.cond.L.Lock()
+	count := s.count
+	s.cond.L.Unlock()
+	ctx, cancel := context.WithCancel(stream.Context())
+	defer cancel()
+	rowsCh, waitRows := s.batch(ctx, req.Start, req.End, 25)
+	replyCh, waitReply := transform(
+		ctx,
+		t,
+		req.Start,
+		req.Accumulator,
+		rowsCh,
+		int(req.InputLimit),
+		int(req.OutputLimit),
+		time.Duration(req.DurationLimit*1e9),
+	)
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case reply, active := <-replyCh:
+			if !active {
+				cancel()
+				err := waitReply()
+				if err != nil {
+					return err
+				}
+				err = waitRows()
+				if err != nil {
+					return err
+				}
+				if req.Tail {
+					s.wait(stream.Context(), count)
+					goto Loop
+				}
+				return nil
+			}
+			err := stream.Send(reply)
+			if err != nil {
+				return err
+			}
+		}
+	}
+}
+
+type row struct {
+	key   []byte
+	value string
+}
+
+// wait blocks until any of the following are true
+// * ctx closes
+// * the server's count no longer matches count
+func (s *Server) wait(ctx context.Context, count uint64) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go func() {
+		<-ctx.Done()
+		s.cond.Broadcast() // cause condition to be rechecked so function's blocking routine may exit
+	}()
+	s.cond.L.Lock()
+	defer s.cond.L.Unlock()
+	for {
+		done := false
+		select {
+		case <-ctx.Done():
+			done = true
+		default:
+		}
+		if done || count != s.count {
+			return
+		}
+		s.cond.Wait()
+	}
 }
 
 func (s *Server) Run(ctx context.Context) error {
@@ -127,96 +406,24 @@ func WithIngresses(is []Ingresser) ServerOption {
 		return nil
 	}
 }
-func (s *Server) ReadRows(req *emitio.ReadRowsRequest, stream emitio.Emitio_ReadRowsServer) error {
-	ti, ok := s.transformers.Load(req.TransformerId)
-	if !ok {
-		return fmt.Errorf("unhandled transformer id")
-	}
-	t, ok := ti.(Transformer)
-	if !ok {
-		panic(fmt.Sprintf("expected transformers to be set into map but found %T", ti))
-	}
-	start := req.Start
-	accumulator := req.Accumulator
-	count := 0
-	for {
-		input := []string{}
-		startCount := atomic.LoadUint64(&s.count)
-		seen := false
-		err := s.db.View(func(txn *badger.Txn) error {
-			last := start
-			defer func() {
-				start = make([]byte, len(last)+1)
-				copy(start, last)
-				start[len(start)-1] = '\x00'
-			}()
-			opts := badger.DefaultIteratorOptions
-			opts.PrefetchSize = 25
-			it := txn.NewIterator(opts)
-			for it.Seek(start); it.Valid(); it.Next() {
-				seen = true
-				item := it.Item()
-				k := item.Key()
-				if len(req.End) > 0 && bytes.Compare(k, req.End) == -1 {
-					return nil
-				}
-				v, err := item.Value()
-				if err != nil {
-					return err
-				}
-				last = k
-				input = append(input, string(v))
-				count++
-				if count >= int(req.Limit) {
-					return nil
-				}
-			}
-			return nil
-		})
-		if len(input) > 0 {
-			tctx, cancel := context.WithTimeout(stream.Context(), time.Second*10)
-			var out []string
-			accumulator, out, err = t.Transform(tctx, accumulator, input)
-			cancel()
-			if err != nil {
-				return err
-			}
-			err = stream.Send(&emitio.ReadRowsReply{
-				Rows:            out,
-				LastInputRow:    start[:len(start)-1],
-				LastAccumulator: accumulator,
-			})
-			if err != nil {
-				return err
-			}
-		}
-		if !seen {
-			s.cond.L.Lock()
-			if startCount == s.count {
-				s.cond.Wait()
-			}
-			s.cond.L.Unlock()
-		}
+
+func WithKey(key string) ServerOption {
+	return func(ctx context.Context, s *Server) error {
+		s.key = key
+		return nil
 	}
 }
 
-func (s *Server) MakeTransformer(ctx context.Context, req *emitio.MakeTransformerRequest) (*emitio.MakeTransformerReply, error) {
-	id := uuid.NewV4().String()
-	t, err := transformers.NewJS(string(req.Javascript))
-	if err != nil {
-		return nil, errors.Wrap(err, "new js")
+func WithID(id string) ServerOption {
+	return func(ctx context.Context, s *Server) error {
+		s.id = id
+		return nil
 	}
-	s.transformers.Store(id, t)
-	return &emitio.MakeTransformerReply{
-		Id: id,
-	}, nil
 }
 
-func (s *Server) GetIngresses(context.Context, *emitio.GetIngressesRequest) (*emitio.GetIngressesReply, error) {
-	reply := &emitio.GetIngressesReply{}
-	reply.Ingresses = make([]string, 0, len(s.ingresses))
-	for _, i := range s.ingresses {
-		reply.Ingresses = append(reply.Ingresses, i.URI())
+func WithOrigin(origin map[string]string) ServerOption {
+	return func(ctx context.Context, s *Server) error {
+		s.origin = origin
+		return nil
 	}
-	return reply, nil
 }

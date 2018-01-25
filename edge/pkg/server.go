@@ -126,7 +126,9 @@ func (s *Server) ReadRows(req *edge.ReadRowsRequest, stream edge.Edge_ReadRowsSe
 		End:           req.End,
 		TransformerId: req.TransformerId,
 		Accumulator:   req.Accumulator,
-		Limit:         req.Limit,
+		InputLimit:    req.OutputLimit,
+		OutputLimit:   req.OutputLimit,
+		MaxDuration:   req.MaxDuration,
 	})
 	if err != nil {
 		return err
@@ -138,7 +140,7 @@ func (s *Server) ReadRows(req *edge.ReadRowsRequest, stream edge.Edge_ReadRowsSe
 		}
 		err = stream.Send(&edge.ReadRowsReply{
 			Rows:            reply.Rows,
-			LastInputRow:    reply.LastInputRow,
+			LastInputRowKey: reply.LastInputRowKey,
 			LastAccumulator: reply.LastAccumulator,
 		})
 		if err != nil {
@@ -166,7 +168,7 @@ func (s *Server) MakeTransformer(ctx context.Context, req *edge.MakeTransformerR
 	}, nil
 }
 
-func (s *Server) GetIngresses(ctx context.Context, req *edge.GetIngressesRequest) (*edge.GetIngressesReply, error) {
+func (s *Server) Info(ctx context.Context, req *edge.InfoRequest) (*edge.InfoReply, error) {
 	s.m.Lock()
 	cc, ok := s.nodes[req.Node]
 	s.m.Unlock()
@@ -174,11 +176,14 @@ func (s *Server) GetIngresses(ctx context.Context, req *edge.GetIngressesRequest
 		return nil, grpc.Errorf(codes.NotFound, "node not found")
 	}
 	client := emitio.NewEmitioClient(cc)
-	reply, err := client.GetIngresses(ctx, &emitio.GetIngressesRequest{})
+	reply, err := client.Info(ctx, &emitio.InfoRequest{})
 	if err != nil {
 		return nil, err
 	}
-	return &edge.GetIngressesReply{
+	return &edge.InfoReply{
+		Key:       reply.Key,
+		Id:        reply.Id,
+		Origin:    reply.Origin,
 		Ingresses: reply.Ingresses,
 	}, nil
 }

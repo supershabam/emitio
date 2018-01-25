@@ -35,7 +35,7 @@ func NewJS(script string) (*JS, error) {
 }
 
 // Transform implements emitio.Transformer
-func (js *JS) Transform(ctx context.Context, acc string, in []string) (string, []string, error) {
+func (js *JS) Transform(ctx context.Context, acc string, in string) (string, []string, error) {
 	v, err := js.vm.Get("transform")
 	if err != nil {
 		return "", nil, errors.Wrap(err, "get transform")
