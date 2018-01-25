@@ -3,6 +3,7 @@ package pkg
 import (
 	"context"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net"
 	"testing"
@@ -431,7 +432,9 @@ function transform(acc, line) {
 	stream, err := c.Read(ctx, &emitio.ReadRequest{
 		Start:         []byte{},
 		TransformerId: mtr.Id,
-		InputLimit:    1,
+		InputLimit:    10,
+		OutputLimit:   10,
+		Tail:          false,
 	})
 	require.Nil(t, err)
 	reply, err := stream.Recv()
@@ -442,12 +445,8 @@ function transform(acc, line) {
 		LastInputKey:    []byte("mock:///:0000000000000001"),
 	}, reply)
 	reply, err = stream.Recv()
-	require.Nil(t, err)
-	assert.Equal(t, &emitio.ReadReply{
-		Rows:            nil,
-		LastAccumulator: "",
-		LastInputKey:    []byte("mock:///:0000000000000002"),
-	}, reply)
+	require.Nil(t, reply)
+	require.Equal(t, io.EOF, err)
 }
 
 type mockIngresser struct {

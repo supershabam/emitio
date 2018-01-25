@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 
 	"github.com/dgraph-io/badger"
@@ -251,9 +250,11 @@ Loop:
 	s.cond.L.Lock()
 	count := s.count
 	s.cond.L.Unlock()
-	rowsCh, _ := s.batch(stream.Context(), req.Start, req.End, 25)
-	replyCh, _ := transform(
-		stream.Context(),
+	ctx, cancel := context.WithCancel(stream.Context())
+	defer cancel()
+	rowsCh, waitRows := s.batch(ctx, req.Start, req.End, 25)
+	replyCh, waitReply := transform(
+		ctx,
 		t,
 		req.Start,
 		req.Accumulator,
@@ -264,18 +265,25 @@ Loop:
 	)
 	for {
 		select {
-		case <-stream.Context().Done():
+		case <-ctx.Done():
 			return nil
 		case reply, active := <-replyCh:
 			if !active {
-				zap.L().Debug("replyCh has terminated")
+				cancel()
+				err := waitReply()
+				if err != nil {
+					return err
+				}
+				err = waitRows()
+				if err != nil {
+					return err
+				}
 				if req.Tail {
 					s.wait(stream.Context(), count)
 					goto Loop
 				}
 				return nil
 			}
-			zap.L().Debug("received reply from replyCh")
 			err := stream.Send(reply)
 			if err != nil {
 				return err
