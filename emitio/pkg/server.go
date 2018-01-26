@@ -246,17 +246,18 @@ func (s *Server) Read(req *emitio.ReadRequest, stream emitio.Emitio_ReadServer) 
 	if !ok {
 		panic(fmt.Sprintf("expected transformer type to be set into map but found %T", ti))
 	}
+	start := req.Start
 Loop:
 	s.cond.L.Lock()
 	count := s.count
 	s.cond.L.Unlock()
 	ctx, cancel := context.WithCancel(stream.Context())
 	defer cancel()
-	rowsCh, waitRows := s.batch(ctx, req.Start, req.End, 25)
+	rowsCh, waitRows := s.batch(ctx, start, req.End, 25)
 	replyCh, waitReply := transform(
 		ctx,
 		t,
-		req.Start,
+		start,
 		req.Accumulator,
 		rowsCh,
 		int(req.InputLimit),
@@ -280,6 +281,10 @@ Loop:
 				}
 				if req.Tail {
 					s.wait(stream.Context(), count)
+					next := make([]byte, len(start)+1)
+					copy(next, start)
+					next[len(next)-1] = 0x00
+					start = next
 					goto Loop
 				}
 				return nil
@@ -288,6 +293,7 @@ Loop:
 			if err != nil {
 				return err
 			}
+			start = reply.LastInputKey
 		}
 	}
 }
