@@ -247,6 +247,7 @@ func (s *Server) Read(req *emitio.ReadRequest, stream emitio.Emitio_ReadServer) 
 		panic(fmt.Sprintf("expected transformer type to be set into map but found %T", ti))
 	}
 	start := req.Start
+	acc := req.Accumulator
 Loop:
 	s.cond.L.Lock()
 	count := s.count
@@ -258,7 +259,7 @@ Loop:
 		ctx,
 		t,
 		start,
-		req.Accumulator,
+		acc,
 		rowsCh,
 		int(req.InputLimit),
 		int(req.OutputLimit),
@@ -294,6 +295,7 @@ Loop:
 				return err
 			}
 			start = reply.LastInputKey
+			acc = reply.LastAccumulator
 		}
 	}
 }
