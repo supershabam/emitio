@@ -101,19 +101,19 @@ func WithAPIListener(l net.Listener) ServerOption {
 	}
 }
 
-func (s *Server) GetNodes(ctx context.Context, req *edge.GetNodesRequest) (*edge.GetNodesReply, error) {
+func (s *Server) Nodes(ctx context.Context, req *edge.NodesRequest) (*edge.NodesReply, error) {
 	nodes := []string{}
 	s.m.Lock()
 	for id := range s.nodes {
 		nodes = append(nodes, id)
 	}
 	s.m.Unlock()
-	return &edge.GetNodesReply{
+	return &edge.NodesReply{
 		Nodes: nodes,
 	}, nil
 }
 
-func (s *Server) ReadRows(req *edge.ReadRowsRequest, stream edge.Edge_ReadRowsServer) error {
+func (s *Server) Read(req *edge.ReadRequest, stream edge.Edge_ReadServer) error {
 	s.m.Lock()
 	cc, ok := s.nodes[req.Node]
 	s.m.Unlock()
@@ -121,14 +121,15 @@ func (s *Server) ReadRows(req *edge.ReadRowsRequest, stream edge.Edge_ReadRowsSe
 		return grpc.Errorf(codes.NotFound, "node not found")
 	}
 	client := emitio.NewEmitioClient(cc)
-	resp, err := client.ReadRows(stream.Context(), &emitio.ReadRowsRequest{
+	resp, err := client.Read(stream.Context(), &emitio.ReadRequest{
 		Start:         req.Start,
 		End:           req.End,
 		TransformerId: req.TransformerId,
 		Accumulator:   req.Accumulator,
 		InputLimit:    req.OutputLimit,
 		OutputLimit:   req.OutputLimit,
-		MaxDuration:   req.MaxDuration,
+		DurationLimit: req.DurationLimit,
+		Tail:          req.Tail,
 	})
 	if err != nil {
 		return err
@@ -138,10 +139,10 @@ func (s *Server) ReadRows(req *edge.ReadRowsRequest, stream edge.Edge_ReadRowsSe
 		if err != nil {
 			return err
 		}
-		err = stream.Send(&edge.ReadRowsReply{
+		err = stream.Send(&edge.ReadReply{
 			Rows:            reply.Rows,
-			LastInputRowKey: reply.LastInputRowKey,
 			LastAccumulator: reply.LastAccumulator,
+			LastInputKey:    reply.LastInputKey,
 		})
 		if err != nil {
 			return err
