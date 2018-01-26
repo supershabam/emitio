@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"reflect"
+	"sort"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -19,29 +20,25 @@ const js = `
 function transform(acc, line) {
 	var a = JSON.parse(acc)
 	a["buckets"] = (a["buckets"] || {})
-	var key = ""
-	if (line.length <= 10) {
-		key = "lte10"
-	} else if (line.length <= 20) {
-		key = "lte20"
-	} else if (line.length <= 40) {
-		key = "lte40"
-	} else if (line.length <= 80) {
-		key = "lte80"
-	} else if (line.length <= 160) {
-		key = "lte160"
-	} else if (line.length <= 320) {
-		key = "lte320"
-	} else if (line.length <= 640) {
-		key = "lte640"
-	} else {
-		key = "lte+inf"
+	a.buckets["le+inf"] = (a.buckets["le+inf"] || 0) + 1	
+    if (line.length <= 80) {
+		a.buckets["le80"] = (a.buckets["le80"] || 0) + 1
+	} 
+	if (line.length <= 160) {
+		a.buckets["le160"] = (a.buckets["le160"] || 0) + 1
+	}	
+	if (line.length <= 320) {
+		a.buckets["le320"] = (a.buckets["le320"] || 0) + 1
+	} 
+	if (line.length <= 640) {
+		a.buckets["le640"] = (a.buckets["le640"] || 0) + 1
+	}
+	if (line.length > 640) {
 		a["outliers"] = a["outliers"] || []
 		var l = JSON.parse(line)
 		// capture line's sequence id
 		a["outliers"].push(l.s)
 	}
-	a.buckets[key] = (a.buckets[key] || 0) + 1
 	return [JSON.stringify(a), []]
 }
 `
@@ -100,7 +97,16 @@ func main() {
 				if reflect.DeepEqual(m, buckets) {
 					continue
 				}
-				fmt.Printf("buckets: %+v\n", m)
+				keys := []string{}
+				for k := range m {
+					keys = append(keys, k)
+				}
+				sort.Strings(keys)
+				fmt.Println("buckets")
+				for _, k := range keys {
+					v := m[k]
+					fmt.Printf("%s: \t%d\n", k, v)
+				}
 				buckets = m
 			}
 		}
