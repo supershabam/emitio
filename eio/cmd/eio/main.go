@@ -15,66 +15,6 @@ import (
 	"google.golang.org/grpc"
 )
 
-// const js = `
-// function transform(acc, line) {
-// 	var a = JSON.parse(acc)
-// 	a.count = (a.count || 0) + 1
-// 	return [JSON.stringify(a), []]
-// }
-// `
-
-// const js = `
-// function transform(acc, line) {
-// 	var output = []
-// 	var l = JSON.parse(line)
-// 	var r = l.r
-// 	if (r.indexOf('processor') == -1) {
-// 		continue
-// 	}
-// 	var parts = r.split('\n')
-// 	for (var j=0; j<parts.length; j++) {
-// 		output.push(parts[j])
-// 	}
-// 	return [acc, output]
-// }
-// `
-
-// const js = `
-// function transform(acc, lines) {
-// 	var output = []
-// 	for (var i = 0; i < lines.length; i++) {
-// 		var line = lines[i]
-// 		if (line.indexOf('sshd') == -1) {
-// 			continue
-// 		}
-// 		if (line.indexOf('Invalid user') == -1) {
-// 			continue
-// 		}
-// 		output.push(line)
-// 	}
-// 	return [acc, output]
-// }`
-
-// const js = `
-// function transform(acc, line) {
-// 	var a = JSON.parse(acc)
-// 	a.users = (a.users || {})
-// 	if (line.indexOf('sshd') == -1) {
-// 		return [JSON.stringify(a), []]
-// 	}
-// 	var invalidUserIdx = line.indexOf('Invalid user')
-// 	if (invalidUserIdx == -1) {
-// 		return [JSON.stringify(a), []]
-// 	}
-// 	a["count"] = (a["count"] || 0) + 1
-// 	var invalidUserExtra = line.substr(invalidUserIdx + 'Invalid user'.length + 1, 10)
-// 	var parts = invalidUserExtra.split(' ')
-// 	var invalidUser = parts[0]
-// 	a.users[invalidUser] = (a.users[invalidUser] || 0) + 1
-// 	return [JSON.stringify(a), []]
-// }
-// `
-
 const js = `
 function transform(acc, line) {
 	var a = JSON.parse(acc)
