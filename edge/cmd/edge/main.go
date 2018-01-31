@@ -28,7 +28,8 @@ func main() {
 	}
 	zap.ReplaceGlobals(logger)
 	var (
-		apiAddr = ":9090"
+		apiAddr  = ":9090"
+		httpAddr = ":9009"
 	)
 	cer, err := tls.LoadX509KeyPair(
 		"/etc/letsencrypt/live/edge.emit.io/fullchain.pem",
@@ -47,7 +48,16 @@ func main() {
 	if err != nil {
 		zap.L().Fatal("api net listen", zap.Error(err))
 	}
-	s, err := pkg.NewServer(ctx, pkg.WithRGRPCListener(rgrpcL), pkg.WithAPIListener(apiL))
+	zap.L().Info("http api listening", zap.String("addr", httpAddr))
+	httpL, err := net.Listen("tcp", httpAddr)
+	if err != nil {
+		zap.L().Fatal("api http net listen", zap.Error(err))
+	}
+	s, err := pkg.NewServer(ctx,
+		pkg.WithRGRPCListener(rgrpcL),
+		pkg.WithAPIListener(apiL),
+		pkg.WithHTTPListener(httpL),
+	)
 	if err != nil {
 		zap.L().Fatal("creating server", zap.Error(err))
 	}

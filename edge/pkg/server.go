@@ -3,9 +3,12 @@ package pkg
 import (
 	"context"
 	"net"
+	"net/http"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 
@@ -21,6 +24,7 @@ var _ edge.EdgeServer = &Server{}
 type Server struct {
 	nodes map[string]*grpc.ClientConn
 	rgrpc *listener
+	http  net.Listener
 	l     net.Listener
 	m     sync.Mutex
 }
@@ -36,6 +40,125 @@ func NewServer(ctx context.Context, opts ...ServerOption) (*Server, error) {
 		}
 	}
 	return s, nil
+}
+
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	onErr := func(err error) {
+		zap.L().Error("serving http", zap.Error(err))
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+	if r.Method == "OPTIONS" {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Headers", "*")
+		return
+	}
+	var upgrader = websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+		CheckOrigin: func(r *http.Request) bool {
+			return true
+		},
+	}
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		onErr(err)
+		return
+	}
+	defer conn.Close()
+	var fn struct {
+		Javascript string `json:"javascript"`
+	}
+	err = conn.ReadJSON(&fn)
+	if err != nil {
+		zap.L().Error("decode json", zap.Error(err))
+		return
+	}
+	cc, err := grpc.DialContext(r.Context(), s.l.Addr().String(), grpc.WithInsecure())
+	if err != nil {
+		zap.L().Error("grpc dial", zap.Error(err))
+		return
+	}
+	c := edge.NewEdgeClient(cc)
+	nodes, err := c.Nodes(r.Context(), &edge.NodesRequest{})
+	if err != nil {
+		zap.L().Error("get nodes", zap.Error(err))
+		return
+	}
+	type msg struct {
+		node  string
+		reply *edge.ReadReply
+	}
+	ch := make(chan msg)
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+	eg, ctx := errgroup.WithContext(ctx)
+	for _, node := range nodes.Nodes {
+		node := node
+		eg.Go(func() error {
+			zap.L().Debug("starting request client", zap.String("node", node))
+			t, err := c.MakeTransformer(ctx, &edge.MakeTransformerRequest{
+				Node:       node,
+				Javascript: []byte(fn.Javascript),
+			})
+			if err != nil {
+				return err
+			}
+			s, err := c.Read(ctx, &edge.ReadRequest{
+				TransformerId: t.Id,
+				InputLimit:    1000000,
+				OutputLimit:   100,
+				DurationLimit: time.Second.Seconds(),
+				Node:          node,
+			})
+			if err != nil {
+				return err
+			}
+			for {
+				reply, err := s.Recv()
+				if err != nil && grpc.Code(err) == codes.OutOfRange {
+					return nil
+				}
+				if err != nil {
+					return err
+				}
+				select {
+				case <-ctx.Done():
+					return nil
+				case ch <- msg{
+					node:  node,
+					reply: reply,
+				}:
+				}
+			}
+		})
+	}
+	eg.Go(func() error {
+		defer cancel()
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			case m, active := <-ch:
+				if !active {
+					return nil
+				}
+				err := conn.WriteJSON(map[string]interface{}{
+					"node":             m.node,
+					"last_accumulator": m.reply.LastAccumulator,
+					"rows":             m.reply.Rows,
+					"last_input_key":   string(m.reply.LastInputKey),
+				})
+				if err != nil {
+					return err
+				}
+			}
+		}
+	})
+	err = eg.Wait()
+	if err != nil {
+		zap.L().Error("from wait", zap.Error(err))
+		return
+	}
 }
 
 func (s *Server) Run(ctx context.Context) error {
@@ -76,6 +199,13 @@ func (s *Server) Run(ctx context.Context) error {
 		return nil
 	})
 	eg.Go(func() error {
+		if s.http == nil {
+			return nil
+		}
+		srv := http.Server{Handler: s}
+		return srv.Serve(s.http)
+	})
+	eg.Go(func() error {
 		<-ctx.Done()
 		s.rgrpc.Close()
 		s.l.Close()
@@ -97,6 +227,13 @@ func WithRGRPCListener(l net.Listener) ServerOption {
 func WithAPIListener(l net.Listener) ServerOption {
 	return func(ctx context.Context, s *Server) error {
 		s.l = l
+		return nil
+	}
+}
+
+func WithHTTPListener(l net.Listener) ServerOption {
+	return func(ctx context.Context, s *Server) error {
+		s.http = l
 		return nil
 	}
 }
