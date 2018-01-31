@@ -1,0 +1,24 @@
+{
+  "name": "app",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "dependencies": {
+    "codemirror": "^5.34.0",
+    "material-ui": "^1.0.0-beta.31",
+    "parcel-bundler": "^1.5.1",
+    "react": "^16.2.0",
+    "react-codemirror": "^1.0.0",
+    "react-dom": "^16.2.0",
+    "react-redux": "^5.0.6",
+    "redux": "^3.7.2",
+    "redux-observable": "^0.17.0",
+    "rxjs": "^5.5.6"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "UNLICENSED"
+}
