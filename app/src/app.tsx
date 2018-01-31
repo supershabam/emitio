@@ -3,7 +3,7 @@ import * as ReactDOM from "react-dom";
 
 import MuiThemeProvider from "material-ui/styles/MuiThemeProvider";
 import AppBar from "material-ui/AppBar";
-import Button from "material-ui/Button";
+import RaisedButton from "material-ui/RaisedButton";
 import Card from "material-ui/Card";
 import "rxjs/add/operator/do";
 import "rxjs/add/operator/filter";
@@ -21,14 +21,13 @@ import Editor from "./containers/Editor";
 import Rows from "./containers/Rows";
 
 const reducer = (prev, action) => {
-  console.log(action);
   switch (action.type) {
     case "SUBMIT":
       return { ...prev, ...{ rows: [] } };
     case "EDITOR_CHANGE":
       return { ...prev, ...{ value: action.value } };
     case "READ_ROWS_REPLY":
-      let rows = action.reply.rows.map(row => {
+      let rows = (action.reply.rows || []).map(row => {
         return JSON.parse(row);
       });
       return { ...prev, ...{ rows: prev.rows.concat(rows) } };
@@ -58,7 +57,7 @@ const store = createStore(
   init,
   applyMiddleware(createEpicMiddleware(epic))
 );
-store.subscribe(() => console.log("store", store.getState()));
+// store.subscribe(() => console.log("store", store.getState()));
 
 const App = () => (
   <MuiThemeProvider>
@@ -69,12 +68,12 @@ const App = () => (
         <Editor />
       </Card>
       <br />
-      <Button
-        color="primary"
+      <RaisedButton
+        primary={true}
         onClick={() => store.dispatch({ type: "SUBMIT" })}
       >
         Submit
-      </Button>
+      </RaisedButton>
       <hr />
       <Rows />
     </div>

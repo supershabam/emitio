@@ -11,7 +11,16 @@ const Rows = props => {
       </tr>
     );
   });
-  return <table>{rows}</table>;
+  return (
+    <div>
+      <span>
+        displaying {props.value.length} of {props.total}
+      </span>
+      <table>
+        <tbody>{rows}</tbody>
+      </table>
+    </div>
+  );
 };
 
 export default connect(state => {
