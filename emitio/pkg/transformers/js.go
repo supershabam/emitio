@@ -49,6 +49,44 @@ type JS struct {
 	global  C.JsValueRef
 }
 
+func javascriptify(value interface{}) (C.JsValueRef, error) {
+	var result C.JsValueRef
+	var errCode C.JsErrorCode
+	switch value := value.(type) {
+	case []string:
+		errCode = C.JsCreateArray(C.uint(len(value)), &result)
+		if errCode != C.JsNoError {
+			return result, errors.New("js create array")
+		}
+		for i, v := range value {
+			val, err := javascriptify(v)
+			if err != nil {
+				return result, err
+			}
+			var idx C.JsValueRef
+			errCode = C.JsDoubleToNumber(C.double(float64(i)), &idx)
+			if errCode != C.JsNoError {
+				return result, errors.New("js double to number")
+			}
+			errCode = C.JsSetIndexedProperty(result, idx, val)
+			if errCode != C.JsNoError {
+				return result, errors.New("js set indexed property")
+			}
+		}
+		return result, nil
+	case string:
+		cs := C.CString(value)
+		defer C.free(unsafe.Pointer(cs))
+		errCode = C.JsCreateString(cs, C.size_t(len(value)), &result)
+		if errCode != C.JsNoError {
+			return result, errors.New("js create string")
+		}
+		return result, nil
+	default:
+		return result, fmt.Errorf("unable to javascriptify value of type %T", value)
+	}
+}
+
 func golangify(value C.JsValueRef) (interface{}, error) {
 	var errCode C.JsErrorCode
 	var t C.JsValueType
@@ -155,17 +193,28 @@ func (js *JS) Transform(acc string, lines []string) (string, []string, error) {
 		if errCode != C.JsNoError {
 			return fmt.Errorf("js set current context")
 		}
+		jsAcc, err := javascriptify(acc)
+		if err != nil {
+			return err
+		}
+		jsLines, err := javascriptify(lines)
+		if err != nil {
+			return err
+		}
 		errCode = C.JsGetUndefinedValue(&undefined)
 		if errCode != C.JsNoError {
 			return fmt.Errorf("get undefined value")
 		}
-		args := []C.JsValueRef{undefined}
+		args := []C.JsValueRef{
+			undefined,
+			jsAcc,
+			jsLines,
+		}
 		// note that args[0] is thisArg of the call; actual args start at index 1
-		errCode = C.JsCallFunction(js.fn, &args[0], 1, &result)
+		errCode = C.JsCallFunction(js.fn, &args[0], C.ushort(len(args)), &result)
 		if errCode != C.JsNoError {
 			return fmt.Errorf("call function")
 		}
-		var err error
 		v, err = golangify(result)
 		if err != nil {
 			return errors.Wrap(err, "golangify")
