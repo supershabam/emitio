@@ -50,12 +50,6 @@
   version = "v1.0.0"
 
 [[projects]]
-  branch = "master"
-  name = "github.com/robertkrimen/otto"
-  packages = [".","ast","dbg","file","parser","registry","token"]
-  revision = "3b44b4dcb6c00477273595c312908e2412d07da6"
-
-[[projects]]
   name = "github.com/satori/go.uuid"
   packages = ["."]
   revision = "879c5887cd475cd7864858769793b2ceb0d44feb"
@@ -127,15 +121,9 @@
   revision = "e687fa4e6424368ece6e4fe727cea2c806a0fcb4"
   version = "v1.9.1"
 
-[[projects]]
-  name = "gopkg.in/sourcemap.v1"
-  packages = [".","base64vlq"]
-  revision = "6e83acea0053641eff084973fee085f0c193c61a"
-  version = "v1.0.5"
-
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "fa1669f4d5ba6cfb5d757fed2fd93e5d67db3402531c8454c20056516546c297"
+  inputs-digest = "0b6336f68f2d232bdbbc9c1d2ada984197abca2c222dd388ecc82a70b6bca65a"
   solver-name = "gps-cdcl"
   solver-version = 1
