@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -17,6 +18,10 @@ import (
 	"github.com/supershabam/emitio/emitio/pkg/ingresses"
 	"github.com/supershabam/emitio/emitio/pkg/listeners"
 )
+
+func init() {
+	runtime.LockOSThread()
+}
 
 // --origin pod=$(pod_name)
 // --origin namespace=$(k8s_namespace)

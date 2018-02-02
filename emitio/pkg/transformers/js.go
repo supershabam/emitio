@@ -4,15 +4,21 @@ package transformers
 /*
 #include "ChakraCore.h"
 #include <stdlib.h>
+extern void go_callback();
+static inline void GoCallback() {
+	go_callback();
+}
 */
 import "C"
 import (
 	"context"
 	"fmt"
 	"runtime"
+	"time"
 	"unsafe"
 
 	"github.com/pkg/errors"
+	"go.uber.org/zap"
 )
 
 var jsInvalidReference C.JsContextRef
@@ -44,51 +50,83 @@ func do(fn func() error) error {
 }
 
 type JS struct {
-	runtime C.JsRuntimeHandle
-	context C.JsContextRef
-	fn      C.JsValueRef
-	global  C.JsValueRef
+	runtime *C.JsRuntimeHandle
+	context *C.JsContextRef
 }
 
-func javascriptify(value interface{}) (C.JsValueRef, error) {
+func garbage(runtime C.JsRuntimeHandle) {
+	var errCode C.JsErrorCode
+	errCode = C.JsCollectGarbage(runtime)
+	if errCode != C.JsNoError {
+		panic("error garbage collecting")
+	}
+}
+
+func addref(r C.JsRef, name string) {
+	var errCode C.JsErrorCode
+	var count C.uint
+	errCode = C.JsAddRef(r, &count)
+	if errCode != C.JsNoError {
+		panic("add ref for " + name)
+	}
+	zap.L().Info("add ref", zap.String("name", name), zap.Uint64("count", uint64(count)))
+	zap.L().Sync()
+	time.Sleep(time.Millisecond)
+}
+
+func rmref(r C.JsRef, name string) {
+	var errCode C.JsErrorCode
+	var count C.uint
+	errCode = C.JsRelease(r, &count)
+	if errCode != C.JsNoError {
+		panic("rm ref for " + name)
+	}
+	zap.L().Info("rm ref", zap.String("name", name), zap.Uint64("count", uint64(count)))
+	zap.L().Sync()
+	time.Sleep(time.Millisecond)
+}
+
+func javascriptify(value interface{}) (*C.JsValueRef, error) {
 	var result C.JsValueRef
 	var errCode C.JsErrorCode
 	switch value := value.(type) {
 	case []string:
 		errCode = C.JsCreateArray(C.uint(len(value)), &result)
 		if errCode != C.JsNoError {
-			return result, errors.New("js create array")
+			return nil, errors.New("js create array")
 		}
 		for i, v := range value {
 			val, err := javascriptify(v)
 			if err != nil {
-				return result, err
+				return nil, err
 			}
 			var idx C.JsValueRef
 			errCode = C.JsDoubleToNumber(C.double(float64(i)), &idx)
 			if errCode != C.JsNoError {
-				return result, errors.New("js double to number")
+				return nil, errors.New("js double to number")
 			}
-			errCode = C.JsSetIndexedProperty(result, idx, val)
+			errCode = C.JsSetIndexedProperty(result, idx, *val)
 			if errCode != C.JsNoError {
-				return result, errors.New("js set indexed property")
+				return nil, errors.New("js set indexed property")
 			}
 		}
-		return result, nil
+		return &result, nil
 	case string:
 		cs := C.CString(value)
-		defer C.free(unsafe.Pointer(cs))
+		// defer C.free(unsafe.Pointer(cs))
 		errCode = C.JsCreateString(cs, C.size_t(len(value)), &result)
 		if errCode != C.JsNoError {
-			return result, errors.New("js create string")
+			return nil, errors.New("js create string")
 		}
-		return result, nil
+		return &result, nil
 	default:
-		return result, fmt.Errorf("unable to javascriptify value of type %T", value)
+		return nil, fmt.Errorf("unable to javascriptify value of type %T", value)
 	}
 }
 
 func golangify(value C.JsValueRef) (interface{}, error) {
+	zap.L().Info("golangifying")
+	defer zap.L().Info("end golangifying")
 	var errCode C.JsErrorCode
 	var t C.JsValueType
 	errCode = C.JsGetValueType(value, &t)
@@ -115,7 +153,7 @@ func golangifyString(value C.JsValueRef) (string, error) {
 	// cs := C.malloc(C.size_t(C.sizeof(*C.char)) * l)
 	buf := make([]byte, l)
 	cs := C.CString(string(buf))
-	defer C.free(unsafe.Pointer(cs))
+	// defer C.free(unsafe.Pointer(cs))
 	errCode = C.JsCopyString(value, cs, l, nil)
 	if errCode != C.JsNoError {
 		return "", errors.New("copy string get length")
@@ -160,7 +198,7 @@ func propertyID(name string) (C.JsPropertyIdRef, error) {
 	var result C.JsPropertyIdRef
 	var errCode C.JsErrorCode
 	cs := C.CString(name)
-	defer C.free(unsafe.Pointer(cs))
+	// defer C.free(unsafe.Pointer(cs))
 	errCode = C.JsCreatePropertyId(cs, C.size_t(len(name)), &result)
 	if errCode != C.JsNoError {
 		return nil, fmt.Errorf("error %+v creating property id=%s", errCode, name)
@@ -183,36 +221,70 @@ func property(object C.JsValueRef, name string) (C.JsValueRef, error) {
 }
 
 func (js *JS) Transform(ctx context.Context, acc string, lines []string) (string, []string, error) {
+	zap.L().Info("transform")
+	defer zap.L().Info("leaving transform")
 	var v interface{}
 	err := do(func() error {
 		var errCode C.JsErrorCode
 		var (
+			global,
 			undefined,
 			result C.JsValueRef
 		)
-		errCode = C.JsSetCurrentContext(js.context)
+		garbage(*js.runtime)
+		errCode = C.JsSetCurrentContext(*js.context)
 		if errCode != C.JsNoError {
 			return fmt.Errorf("js set current context")
 		}
+		garbage(*js.runtime)
+		errCode = C.JsGetGlobalObject(&global)
+		if errCode != C.JsNoError {
+			return fmt.Errorf("get global object")
+		}
+		garbage(*js.runtime)
+		garbage(*js.runtime)
+		fn, err := property(global, "transform")
+		if err != nil {
+			return errors.Wrap(err, "property")
+		}
+		garbage(*js.runtime)
 		jsAcc, err := javascriptify(acc)
 		if err != nil {
 			return err
 		}
+		addref(C.JsRef(*jsAcc), "jsacc")
+		defer rmref(C.JsRef(*jsAcc), "jsacc")
+		garbage(*js.runtime)
 		jsLines, err := javascriptify(lines)
 		if err != nil {
 			return err
 		}
+		addref(C.JsRef(*jsLines), "jslines")
+		defer rmref(C.JsRef(*jsLines), "jslines")
+		garbage(*js.runtime)
 		errCode = C.JsGetUndefinedValue(&undefined)
 		if errCode != C.JsNoError {
 			return fmt.Errorf("get undefined value")
 		}
+		errCode = C.JsGetUndefinedValue(&result)
+		if errCode != C.JsNoError {
+			return fmt.Errorf("get undefined value into result")
+		}
+		garbage(*js.runtime)
 		args := []C.JsValueRef{
 			undefined,
-			jsAcc,
-			jsLines,
+			*jsAcc,
+			*jsLines,
 		}
 		// note that args[0] is thisArg of the call; actual args start at index 1
-		errCode = C.JsCallFunction(js.fn, &args[0], C.ushort(len(args)), &result)
+		zap.L().Info("JsCallFunction",
+			zap.Uintptr("fn", uintptr(unsafe.Pointer(fn))),
+			zap.Uintptr("result", uintptr(unsafe.Pointer(&result))),
+			zap.String("acc", acc),
+			zap.Strings("lines", lines),
+		)
+		garbage(*js.runtime)
+		errCode = C.JsCallFunction(fn, &args[0], C.ushort(len(args)), &result)
 		if errCode != C.JsNoError {
 			return fmt.Errorf("call function")
 		}
@@ -220,6 +292,10 @@ func (js *JS) Transform(ctx context.Context, acc string, lines []string) (string
 		if err != nil {
 			return errors.Wrap(err, "golangify")
 		}
+		zap.L().Info("golangified", zap.Reflect("value", v))
+		garbage(*js.runtime)
+		garbage(*js.runtime)
+		garbage(*js.runtime)
 		return nil
 	})
 	if err != nil {
@@ -252,30 +328,40 @@ func (js *JS) Transform(ctx context.Context, acc string, lines []string) (string
 }
 
 func NewJS(script string) (*JS, error) {
+	zap.L().Info("new js")
+	zap.L().Sync()
+	defer zap.L().Info("leaving new js")
 	js := &JS{}
 	err := do(func() error {
+		var (
+			runtime C.JsRuntimeHandle
+			context C.JsContextRef
+		)
+		js.runtime = &runtime
+		js.context = &context
 		var errCode C.JsErrorCode
-		errCode = C.JsCreateRuntime(C.JsRuntimeAttributeNone, nil, &js.runtime)
+		errCode = C.JsCreateRuntime(C.JsRuntimeAttributeNone, nil, js.runtime)
 		if errCode != C.JsNoError {
 			return fmt.Errorf("js create runtime")
 		}
-		errCode = C.JsCreateContext(js.runtime, &js.context)
+		errCode = C.JsCreateContext(*js.runtime, js.context)
 		if errCode != C.JsNoError {
 			return fmt.Errorf("js create context")
 		}
-		errCode = C.JsSetCurrentContext(js.context)
+		errCode = C.JsSetCurrentContext(*js.context)
 		if errCode != C.JsNoError {
 			return fmt.Errorf("js set current context")
 		}
 		var fname C.JsValueRef
 		cs := C.CString("code_source_perhaps_unnecessary")
+		// defer C.free(unsafe.Pointer(cs))
 		errCode = C.JsCreateString(cs, C.size_t(len("code_source_perhaps_unnecessary")), &fname)
 		if errCode != C.JsNoError {
 			return fmt.Errorf("js create string for source")
 		}
-		C.free(unsafe.Pointer(cs))
 		var scriptSource C.JsValueRef
 		cscript := C.CString(script)
+		// defer C.free(unsafe.Pointer(cscript))
 		errCode = C.JsCreateExternalArrayBuffer(unsafe.Pointer(cscript), C.uint(len(script)), nil, nil, &scriptSource)
 		if errCode != C.JsNoError {
 			return fmt.Errorf("create external array buffer")
@@ -286,15 +372,6 @@ func NewJS(script string) (*JS, error) {
 		if errCode != C.JsNoError {
 			return fmt.Errorf("js run")
 		}
-		errCode = C.JsGetGlobalObject(&js.global)
-		if errCode != C.JsNoError {
-			return fmt.Errorf("get global object")
-		}
-		fn, err := property(js.global, "transform")
-		if err != nil {
-			return errors.Wrap(err, "property")
-		}
-		js.fn = fn
 		return nil
 	})
 	if err != nil {

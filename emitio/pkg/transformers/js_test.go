@@ -1,13 +1,17 @@
 package transformers
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 )
 
 func TestJS(t *testing.T) {
+	l, _ := zap.NewDevelopment()
+	zap.ReplaceGlobals(l)
 	tt := []struct {
 		name     string
 		program  string
@@ -86,7 +90,7 @@ function transform(acc, lines) {
 				return
 			}
 			for idx := range tc.inacc {
-				acc, lines, err := js.Transform(tc.inacc[idx], tc.inlines[idx])
+				acc, lines, err := js.Transform(context.Background(), tc.inacc[idx], tc.inlines[idx])
 				if err != nil {
 					require.NotNil(t, tc.outerr[idx])
 					assert.Contains(t, err.Error(), tc.outerr[idx].Error())
