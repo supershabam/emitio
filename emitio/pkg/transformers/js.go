@@ -46,6 +46,7 @@ type JS struct {
 	runtime C.JsRuntimeHandle
 	context C.JsContextRef
 	fn      C.JsValueRef
+	global  C.JsValueRef
 }
 
 func golangify(value C.JsValueRef) (interface{}, error) {
@@ -147,29 +148,24 @@ func (js *JS) Transform(acc string, lines []string) (string, []string, error) {
 	err := do(func() error {
 		var errCode C.JsErrorCode
 		var (
-			global,
 			undefined,
 			result C.JsValueRef
 		)
-		// TODO store reference to function in creation, not fetch on each transform call
-		errCode = C.JsGetGlobalObject(&global)
+		errCode = C.JsSetCurrentContext(js.context)
 		if errCode != C.JsNoError {
-			return fmt.Errorf("get global object")
+			return fmt.Errorf("js set current context")
 		}
 		errCode = C.JsGetUndefinedValue(&undefined)
 		if errCode != C.JsNoError {
 			return fmt.Errorf("get undefined value")
 		}
 		args := []C.JsValueRef{undefined}
-		fn, err := property(global, "transform")
-		if err != nil {
-			return errors.Wrap(err, "property")
-		}
 		// note that args[0] is thisArg of the call; actual args start at index 1
-		errCode = C.JsCallFunction(fn, &args[0], 1, &result)
+		errCode = C.JsCallFunction(js.fn, &args[0], 1, &result)
 		if errCode != C.JsNoError {
 			return fmt.Errorf("call function")
 		}
+		var err error
 		v, err = golangify(result)
 		if err != nil {
 			return errors.Wrap(err, "golangify")
@@ -240,6 +236,15 @@ func NewJS(script string) (*JS, error) {
 		if errCode != C.JsNoError {
 			return fmt.Errorf("js run")
 		}
+		errCode = C.JsGetGlobalObject(&js.global)
+		if errCode != C.JsNoError {
+			return fmt.Errorf("get global object")
+		}
+		fn, err := property(js.global, "transform")
+		if err != nil {
+			return errors.Wrap(err, "property")
+		}
+		js.fn = fn
 		return nil
 	})
 	if err != nil {
