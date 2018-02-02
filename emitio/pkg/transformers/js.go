@@ -7,6 +7,7 @@ package transformers
 */
 import "C"
 import (
+	"context"
 	"fmt"
 	"runtime"
 	"unsafe"
@@ -181,7 +182,7 @@ func property(object C.JsValueRef, name string) (C.JsValueRef, error) {
 	return result, nil
 }
 
-func (js *JS) Transform(acc string, lines []string) (string, []string, error) {
+func (js *JS) Transform(ctx context.Context, acc string, lines []string) (string, []string, error) {
 	var v interface{}
 	err := do(func() error {
 		var errCode C.JsErrorCode
