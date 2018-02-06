@@ -105,8 +105,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			s, err := c.Read(ctx, &edge.ReadRequest{
 				TransformerId: t.Id,
-				InputLimit:    1000000,
-				OutputLimit:   100,
+				InputLimit:    1000,
+				OutputLimit:   1000,
 				DurationLimit: time.Second.Seconds(),
 				Node:          node,
 			})

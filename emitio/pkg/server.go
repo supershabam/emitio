@@ -211,7 +211,8 @@ func transform(
 					return nil
 				}
 				for _, r := range rows {
-					acc, out, err := t.Transform(ctx, reply.LastAccumulator, r.value)
+					// TODO run transform in batch
+					acc, out, err := t.Transform(ctx, reply.LastAccumulator, []string{r.value})
 					if err != nil {
 						return errors.Wrap(err, "transform")
 					}

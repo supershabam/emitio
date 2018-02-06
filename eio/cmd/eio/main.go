@@ -17,29 +17,8 @@ import (
 )
 
 const js = `
-function transform(acc, line) {
-	var a = JSON.parse(acc)
-	a["buckets"] = (a["buckets"] || {})
-	a.buckets["le+inf"] = (a.buckets["le+inf"] || 0) + 1	
-    if (line.length <= 80) {
-		a.buckets["le80"] = (a.buckets["le80"] || 0) + 1
-	} 
-	if (line.length <= 160) {
-		a.buckets["le160"] = (a.buckets["le160"] || 0) + 1
-	}	
-	if (line.length <= 320) {
-		a.buckets["le320"] = (a.buckets["le320"] || 0) + 1
-	} 
-	if (line.length <= 640) {
-		a.buckets["le640"] = (a.buckets["le640"] || 0) + 1
-	}
-	if (line.length > 640) {
-		a["outliers"] = a["outliers"] || []
-		var l = JSON.parse(line)
-		// capture line's sequence id
-		a["outliers"].push(l.s)
-	}
-	return [JSON.stringify(a), []]
+function transform(acc, lines) {
+	return [acc, lines]
 }
 `
 
