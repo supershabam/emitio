@@ -19,6 +19,7 @@ import { createEpicMiddleware, combineEpics } from "redux-observable";
 import { Provider } from "react-redux";
 import Editor from "./containers/Editor";
 import Rows from "./containers/Rows";
+import Heatmap from "./containers/Heatmap";
 
 const reducer = (prev, action) => {
   switch (action.type) {
@@ -31,6 +32,8 @@ const reducer = (prev, action) => {
         return JSON.parse(row);
       });
       return { ...prev, ...{ rows: prev.rows.concat(rows) } };
+    case "FETCH_HEATMAP_FULFILLED":
+      return { ...prev, ...{ heatmap: action.response } };
     default:
       return prev;
   }
@@ -44,19 +47,33 @@ const submitEpic = (action$, store) => {
     });
   });
 };
+const fetchHeatmapEpic = (action$, store) => {
+  return action$
+    .filter(action => action.type === "FETCH_HEATMAP")
+    .mergeMap(action =>
+      ajax.getJSON("http://localhost:8080/").map(response => ({
+        type: "FETCH_HEATMAP_FULFILLED",
+        response: response
+      }))
+    );
+};
 
-const epic = combineEpics(submitEpic);
+const epic = combineEpics(submitEpic, fetchHeatmapEpic);
 const init = {
   value: `function transform(acc, line) {
   return [acc, [line]]
 }`,
-  rows: []
+  rows: [],
+  heatmap: {
+    histograms: []
+  }
 };
 const store = createStore(
   reducer,
   init,
   applyMiddleware(createEpicMiddleware(epic))
 );
+store.dispatch({ type: "FETCH_HEATMAP" });
 // store.subscribe(() => console.log("store", store.getState()));
 
 const App = () => (
@@ -82,7 +99,7 @@ const App = () => (
 
 ReactDOM.render(
   <Provider store={store}>
-    <App />
+    <Heatmap heatmap={init.heatmap} />
   </Provider>,
   document.getElementById("root")
 );
