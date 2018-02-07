@@ -2,6 +2,7 @@ package pkg
 
 import (
 	"context"
+	"encoding/json"
 	"net"
 	"net/http"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/pkg/errors"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 
@@ -27,6 +29,7 @@ type Server struct {
 	http  net.Listener
 	l     net.Listener
 	m     sync.Mutex
+	mux   *http.ServeMux
 }
 
 func NewServer(ctx context.Context, opts ...ServerOption) (*Server, error) {
@@ -39,10 +42,140 @@ func NewServer(ctx context.Context, opts ...ServerOption) (*Server, error) {
 			return nil, err
 		}
 	}
+	s.mux = http.NewServeMux()
+	s.mux.HandleFunc("/v0/readnode", s.readNode)
+	s.mux.HandleFunc("/v0/read", s.read)
+	s.mux.HandleFunc("/v0/nodes", s.httpnodes)
 	return s, nil
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.mux.ServeHTTP(w, r)
+}
+
+func (s *Server) httpnodes(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "*")
+	ctx := r.Context()
+	onErr := func(err error) {
+		zap.L().Error("http error serving http nodes", zap.Error(err))
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+	cc, err := grpc.DialContext(ctx, s.l.Addr().String(), grpc.WithInsecure())
+	if err != nil {
+		onErr(errors.Wrap(err, "grpc dial"))
+		return
+	}
+	c := edge.NewEdgeClient(cc)
+	reply, err := c.Nodes(ctx, &edge.NodesRequest{})
+	if err != nil {
+		onErr(errors.Wrap(err, "new edge client"))
+		return
+	}
+	w.Header().Add("Content-Type", "application/json")
+	err = json.NewEncoder(w).Encode(reply)
+	if err != nil {
+		zap.L().Error("while writing response", zap.Error(err))
+	}
+}
+
+func (s *Server) readNode(w http.ResponseWriter, r *http.Request) {
+	onErr := func(err error) {
+		zap.L().Error("serving http", zap.Error(err))
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+	if r.Method == "OPTIONS" {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Headers", "*")
+		return
+	}
+	var upgrader = websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+		CheckOrigin: func(r *http.Request) bool {
+			return true
+		},
+	}
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		onErr(err)
+		return
+	}
+	defer conn.Close()
+	var req struct {
+		Start         string  `json:"start"`
+		End           string  `json:"end"`
+		Javascript    string  `json:"javascript"`
+		Accumulator   string  `json:"accumulator"`
+		InputLimit    uint32  `json:"input_limit"`
+		OutputLimit   uint32  `json:"output_limit"`
+		DurationLimit float64 `json:"duration_limit"`
+		Tail          bool    `json:"tail"`
+		Node          string  `json:"node"`
+	}
+	err = conn.ReadJSON(&req)
+	if err != nil {
+		zap.L().Error("decode json", zap.Error(err))
+		return
+	}
+	ctx := r.Context()
+	cc, err := grpc.DialContext(ctx, s.l.Addr().String(), grpc.WithInsecure())
+	if err != nil {
+		zap.L().Error("grpc dial", zap.Error(err))
+		return
+	}
+	c := edge.NewEdgeClient(cc)
+	zap.L().Debug("starting request client", zap.String("node", req.Node))
+	t, err := c.MakeTransformer(ctx, &edge.MakeTransformerRequest{
+		Node:       req.Node,
+		Javascript: []byte(req.Javascript),
+	})
+	if err != nil {
+		zap.L().Error("make transformer", zap.Error(err))
+		return
+	}
+	stream, err := c.Read(ctx, &edge.ReadRequest{
+		Start:         []byte(req.Start),
+		End:           []byte(req.End),
+		TransformerId: t.Id,
+		Accumulator:   req.Accumulator,
+		InputLimit:    req.InputLimit,
+		OutputLimit:   req.OutputLimit,
+		DurationLimit: req.DurationLimit,
+		Tail:          req.Tail,
+		Node:          req.Node,
+	})
+	if err != nil {
+		zap.L().Error("read", zap.Error(err))
+		return
+	}
+	for {
+		reply, err := stream.Recv()
+		if err != nil && grpc.Code(err) == codes.OutOfRange {
+			return
+		}
+		if err != nil {
+			zap.L().Error("read stream", zap.Error(err))
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			err := conn.WriteJSON(map[string]interface{}{
+				"last_accumulator": reply.LastAccumulator,
+				"rows":             reply.Rows,
+				"last_input_key":   string(reply.LastInputKey),
+			})
+			if err != nil {
+				zap.L().Error("write json", zap.Error(err))
+				return
+			}
+		}
+	}
+}
+
+func (s *Server) read(w http.ResponseWriter, r *http.Request) {
 	onErr := func(err error) {
 		zap.L().Error("serving http", zap.Error(err))
 		http.Error(w, err.Error(), http.StatusInternalServerError)
