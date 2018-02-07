@@ -210,24 +210,27 @@ func transform(
 					flush()
 					return nil
 				}
+				lines := []string{}
+				var last []byte
 				for _, r := range rows {
-					// TODO run transform in batch
-					acc, out, err := t.Transform(ctx, reply.LastAccumulator, []string{r.value})
-					if err != nil {
-						return errors.Wrap(err, "transform")
-					}
-					dirty = true
-					inputCount++
-					reply.LastAccumulator = acc
-					reply.LastInputKey = r.key
-					reply.Rows = append(reply.Rows, out...)
-					if inputCount >= maxInput || len(reply.Rows) >= maxOutput {
-						flush()
-						select {
-						case <-ctx.Done():
-							return nil
-						default:
-						}
+					lines = append(lines, r.value)
+					last = r.key
+				}
+				acc, out, err := t.Transform(ctx, reply.LastAccumulator, lines)
+				if err != nil {
+					return errors.Wrap(err, "transform")
+				}
+				inputCount += len(lines)
+				dirty = true
+				reply.LastAccumulator = acc
+				reply.LastInputKey = last
+				reply.Rows = append(reply.Rows, out...)
+				if inputCount >= maxInput || len(reply.Rows) >= maxOutput {
+					flush()
+					select {
+					case <-ctx.Done():
+						return nil
+					default:
 					}
 				}
 			}
