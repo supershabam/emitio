@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 
 	"github.com/dgraph-io/badger"
@@ -123,7 +124,7 @@ func (s *Server) batch(ctx context.Context, start, end []byte, maxLen int) (chan
 					start[len(start)-1] = 0x00
 				}()
 				opts := badger.DefaultIteratorOptions
-				opts.PrefetchSize = 25
+				opts.PrefetchSize = maxLen
 				it := txn.NewIterator(opts)
 				for it.Seek(start); it.Valid(); it.Next() {
 					item := it.Item()
@@ -258,7 +259,7 @@ Loop:
 	s.cond.L.Unlock()
 	ctx, cancel := context.WithCancel(stream.Context())
 	defer cancel()
-	rowsCh, waitRows := s.batch(ctx, start, req.End, 25)
+	rowsCh, waitRows := s.batch(ctx, start, req.End, 500)
 	replyCh, waitReply := transform(
 		ctx,
 		t,
@@ -400,6 +401,25 @@ func (s *Server) Run(ctx context.Context) error {
 			}
 		})
 	}
+	eg.Go(func() error {
+		// We recommend setting discardRatio to 0.5, thus indicating that a file be
+		// rewritten if half the space can be discarded.
+		t := time.NewTicker(time.Second * 15)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-t.C:
+				t0 := time.Now()
+				err := s.db.RunValueLogGC(0.5)
+				if err != nil && err != badger.ErrNoRewrite {
+					return err
+				}
+				zap.L().Debug("ran garbage collection", zap.Duration("elapsed", time.Since(t0)))
+			}
+		}
+	})
 	return eg.Wait()
 }
 

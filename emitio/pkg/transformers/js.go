@@ -13,6 +13,7 @@ import (
 	"unsafe"
 
 	"github.com/pkg/errors"
+	"go.uber.org/zap"
 )
 
 var jsInvalidReference C.JsContextRef
@@ -55,6 +56,7 @@ func addref(r C.JsRef, name string) {
 	if errCode != C.JsNoError {
 		panic("add ref for " + name)
 	}
+	zap.L().Info("added ref", zap.String("name", name), zap.Int("count", int(count)))
 }
 
 func rmref(r C.JsRef, name string) {
@@ -64,6 +66,7 @@ func rmref(r C.JsRef, name string) {
 	if errCode != C.JsNoError {
 		panic("rm ref for " + name)
 	}
+	zap.L().Info("removed ref", zap.String("name", name), zap.Int("count", int(count)))
 }
 
 func javascriptify(value interface{}) (*C.JsValueRef, error) {
@@ -239,6 +242,8 @@ func (js *JS) Transform(ctx context.Context, acc string, lines []string) (string
 		if errCode != C.JsNoError {
 			return fmt.Errorf("get undefined value into result")
 		}
+		addref(C.JsRef(result), "result")
+		defer rmref(C.JsRef(result), "result")
 		args := []C.JsValueRef{
 			undefined,
 			*jsAcc,
