@@ -1,4 +1,6 @@
 import * as React from "react";
+import * as CodeMirror from "react-codemirror";
+import "codemirror/mode/javascript/javascript";
 import { connect } from "react-redux";
 
 const Rows = props => {
@@ -16,6 +18,8 @@ const Rows = props => {
       <span>
         displaying {props.value.length} of {props.total}
       </span>
+      <hr />
+      <span>{props.accumulator}</span>
       <table>
         <tbody>{rows}</tbody>
       </table>
@@ -25,6 +29,7 @@ const Rows = props => {
 
 export default connect(state => {
   return {
+    accumulator: state.lastAcc,
     total: state.rows.length,
     value: state.rows.slice(0, 100)
   };
