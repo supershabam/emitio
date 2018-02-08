@@ -142,6 +142,6 @@ function transform(acc, lines) {
         })
       );
     });
-  a.count = (a.count || 0) + 1;
+  a.count = (a.count || 0) + lines.length;
   return [JSON.stringify(a), out];
 }

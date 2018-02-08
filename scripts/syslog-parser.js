@@ -133,6 +133,6 @@ function transform(acc, lines) {
     .map(line => {
       return JSON.stringify(line);
     });
-  a.count = (a.count || 0) + 1;
+  a.count = (a.count || 0) + lines.length;
   return [JSON.stringify(a), out];
 }
