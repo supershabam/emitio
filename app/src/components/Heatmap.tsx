@@ -51,7 +51,7 @@ const Heatmap = props => {
       return acc + ` L ${points[0]} ${points[1]}`;
     }, "");
   return (
-    <svg viewBox="0 0 100 100">
+    <svg viewBox="0 0 100 100" style={{ maxHeight: "400px" }}>
       <svg
         viewBox="0 0 100 100"
         width="100%"

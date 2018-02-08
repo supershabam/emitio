@@ -1,10 +1,6 @@
 import * as React from "react";
 import * as ReactDOM from "react-dom";
-
 import MuiThemeProvider from "material-ui/styles/MuiThemeProvider";
-import AppBar from "material-ui/AppBar";
-import RaisedButton from "material-ui/RaisedButton";
-import Card from "material-ui/Card";
 import "rxjs/add/operator/do";
 import "rxjs/add/operator/catch";
 import "rxjs/add/operator/filter";
@@ -16,17 +12,16 @@ import "rxjs/add/operator/mapTo";
 import { ajax } from "rxjs/observable/dom/ajax";
 import { webSocket } from "rxjs/observable/dom/websocket";
 import * as Rx from "rxjs";
-
 import { createStore, applyMiddleware, compose } from "redux";
 import { createEpicMiddleware, combineEpics } from "redux-observable";
 import { Provider } from "react-redux";
-import Editor from "./containers/Editor";
-import Rows from "./containers/Rows";
-import Heatmap from "./containers/Heatmap";
-import NodeCount from "./containers/NodeCount";
+import App from "./containers/App";
 
 const reducer = (prev, action) => {
+  // console.log(action);
   switch (action.type) {
+    case "CHANGE_TAB":
+      return { ...prev, ...{ tab: action.value } };
     case "READ_NODE":
       return { ...prev, ...{ rows: [], lastAcc: "" } };
     case "EDITOR_CHANGE":
@@ -84,6 +79,7 @@ const readNodeEpic = (action$, store) => {
 
 const epic = combineEpics(fetchHeatmapEpic, fetchNodesEpic, readNodeEpic);
 const init = {
+  tab: "reducer",
   lastAcc: "",
   nodes: [],
   value: `function transform(acc, lines) {
@@ -109,47 +105,14 @@ const store = createStore(
   applyMiddleware(createEpicMiddleware(epic))
 );
 store.dispatch({ type: "FETCH_NODES" });
+store.dispatch({ type: "FETCH_HEATMAP" });
 // store.subscribe(() => console.log("store", store.getState()));
-
-const App = () => (
-  <MuiThemeProvider>
-    <div>
-      <AppBar title="emitio" />
-      <p>javascript reducer</p>
-      <Card>
-        <Editor />
-      </Card>
-      <br />
-      <RaisedButton
-        primary={true}
-        onClick={() =>
-          store.dispatch({
-            type: "READ_NODE",
-            request: {
-              node: store.getState().nodes[0],
-              accumulator: "{}",
-              input_limit: 10000,
-              output_limit: 10000,
-              duration_limit: 15,
-              javascript: store.getState().value
-            }
-          })
-        }
-      >
-        Submit
-      </RaisedButton>
-      <hr />
-      <Rows />
-    </div>
-  </MuiThemeProvider>
-);
 
 ReactDOM.render(
   <Provider store={store}>
-    <div>
-      <NodeCount />
+    <MuiThemeProvider>
       <App />
-    </div>
+    </MuiThemeProvider>
   </Provider>,
   document.getElementById("root")
 );
