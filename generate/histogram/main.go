@@ -92,11 +92,7 @@ func (h Histogram) MarshalJSON() ([]byte, error) {
 	return json.Marshal(m)
 }
 
-func generateHistogram(rng *rand.Rand, buckets []float64) Histogram {
-	double := false
-	if rng.Intn(4) == 0 {
-		double = true
-	}
+func generateHistogram(rng *rand.Rand, buckets []float64, double bool) Histogram {
 	count := rng.Int31n(6000)
 	h := Histogram{}
 	for i := 0; i < int(count); i++ {
@@ -150,8 +146,12 @@ func main() {
 			Histograms: []Histogram{},
 		}
 		count := 5 + rng.Intn(50)
+		double := false
 		for i := 0; i < count; i++ {
-			h.Histograms = append(h.Histograms, generateHistogram(rng, buckets))
+			if rng.Intn(5) == 0 {
+				double = !double
+			}
+			h.Histograms = append(h.Histograms, generateHistogram(rng, buckets, double))
 		}
 		err := json.NewEncoder(w).Encode(h)
 		if err != nil {
