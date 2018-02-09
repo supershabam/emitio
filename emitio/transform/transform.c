@@ -61,7 +61,7 @@ int transform(duk_context* ctx, const transform_param in, transform_param* out, 
     l = duk_get_int(ctx, -1);
     duk_pop(ctx);
     out->nlines = (int)l;
-    out->lines = malloc(out->nlines * sizeof(char*));
+    out->lines = calloc(out->nlines, sizeof(char*));
     for (int i = 0; i < l; i++) {
         duk_get_prop_index(ctx, -1, i);
         if (!duk_is_string(ctx, -1)) {
