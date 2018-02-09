@@ -96,21 +96,28 @@ func (ti *TransformIn) Free() {
 }
 
 type JS struct {
-	dctx *C.duk_context
+	script string
 }
 
 func NewJS(script string) (*JS, error) {
-	var dctx *C.duk_context
-	dctx = C.create_heap()
-	src := C.CString(script)
-	defer C.free(unsafe.Pointer(src))
-	C.duk_eval_raw(dctx, src, 0, 0|C.DUK_COMPILE_SAFE|C.DUK_COMPILE_EVAL|C.DUK_COMPILE_NOSOURCE|C.DUK_COMPILE_STRLEN|C.DUK_COMPILE_NOFILENAME)
+	// var dctx *C.duk_context
+	// dctx = C.create_heap()
+	// src := C.CString(script)
+	// defer C.free(unsafe.Pointer(src))
+	// C.duk_eval_raw(dctx, src, 0, 0|C.DUK_COMPILE_SAFE|C.DUK_COMPILE_EVAL|C.DUK_COMPILE_NOSOURCE|C.DUK_COMPILE_STRLEN|C.DUK_COMPILE_NOFILENAME)
 	return &JS{
-		dctx: dctx,
+		script: script,
 	}, nil
 }
 
 func (js *JS) Transform(ctx context.Context, acc string, lines []string) (string, []string, error) {
+	var dctx *C.duk_context
+	dctx = C.create_heap()
+	defer C.duk_destroy_heap(dctx)
+	src := C.CString(js.script)
+	defer C.free(unsafe.Pointer(src))
+	C.duk_eval_raw(dctx, src, 0, 0|C.DUK_COMPILE_SAFE|C.DUK_COMPILE_EVAL|C.DUK_COMPILE_NOSOURCE|C.DUK_COMPILE_STRLEN|C.DUK_COMPILE_NOFILENAME)
+	C.duk_require_stack(dctx, C.duk_idx_t(len(lines)+10))
 	var out C.transform_param
 	ti := &TransformIn{
 		acc:   acc,
@@ -120,7 +127,7 @@ func (js *JS) Transform(ctx context.Context, acc string, lines []string) (string
 	buf := make([]byte, 1024*4)
 	err := C.CString(string(buf))
 	defer C.free(unsafe.Pointer(err))
-	rc := C.transform(js.dctx, ti.C(), &out, err)
+	rc := C.transform(dctx, ti.C(), &out, err)
 	if rc != 0 {
 		return "", nil, fmt.Errorf("rc=%d,err=%s", rc, C.GoString(err))
 	}
