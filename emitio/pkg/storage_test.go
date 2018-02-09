@@ -11,7 +11,7 @@ import (
 
 func TestStorage(t *testing.T) {
 	ctx := context.Background()
-	s, err := NewSQLiteStore(ctx, "memory:///")
+	s, err := NewSQLiteStore(ctx, "memory://")
 	require.Nil(t, err)
 	require.NotNil(t, s)
 	t0 := time.Now()

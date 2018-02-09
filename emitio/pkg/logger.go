@@ -5,5 +5,5 @@ import (
 )
 
 func ParseLogger(rawuri string) (*zap.Logger, error) {
-	return zap.NewProduction()
+	return zap.NewDevelopment()
 }

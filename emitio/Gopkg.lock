@@ -38,6 +38,12 @@
   revision = "1e59b77b52bf8e4b449a57e6f79f21226d571845"
 
 [[projects]]
+  name = "github.com/mattn/go-sqlite3"
+  packages = ["."]
+  revision = "6c771bb9887719704b210e87e934f08be014bdb1"
+  version = "v1.6.0"
+
+[[projects]]
   name = "github.com/pkg/errors"
   packages = ["."]
   revision = "645ef00459ed84a119197bfb8d8205042c6df63d"
@@ -130,6 +136,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "9738bfeacc35afb3e2b9da9eed3ba04fe296d83ee55955d7a157eb201cc705cc"
+  inputs-digest = "a3e38d8b62462dc10422adee6f37c8c90924c0f100cbb1739b336bd43dc6e39f"
   solver-name = "gps-cdcl"
   solver-version = 1

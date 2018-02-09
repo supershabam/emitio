@@ -1,19 +1,18 @@
 package pkg
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
+	"math"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 
-	"github.com/dgraph-io/badger"
 	"github.com/pkg/errors"
 	uuid "github.com/satori/go.uuid"
 	"github.com/supershabam/emitio/emitio/pb/emitio"
@@ -28,7 +27,7 @@ var _ emitio.EmitioServer = &Server{}
 // about the running state of the server and also to query information out of the embedded key/value
 // store and mutate that information server-side via javascript.
 type Server struct {
-	db           *badger.DB
+	s            Storage
 	key          string
 	id           string
 	ingresses    []Ingresser
@@ -113,50 +112,58 @@ func (s *Server) batch(ctx context.Context, start, end []byte, maxLen int) (chan
 				return nil
 			default:
 			}
-			err := s.db.View(func(txn *badger.Txn) error {
-				// last points to the last read row key value but is only valid within
-				// the txn.
-				var last []byte
-				defer func() {
-					start = make([]byte, len(last)+1)
-					copy(start, last)
-					// start the next iteration at the next possible key
-					start[len(start)-1] = 0x00
-				}()
-				opts := badger.DefaultIteratorOptions
-				opts.PrefetchSize = maxLen
-				it := txn.NewIterator(opts)
-				for it.Seek(start); it.Valid(); it.Next() {
-					item := it.Item()
-					k := item.Key()
-					// if there is an end AND k >= end
-					if len(end) > 0 && bytes.Compare(k, end) >= 0 {
-						return io.EOF
+			// key := fmt.Sprintf("%s:%016X", uri, myseq)
+			if len(start) == 0 {
+				start = []byte("temp:0")
+			}
+			zap.L().Debug("parsing key for uri and start int", zap.ByteString("start", start))
+			parts := strings.Split(string(start), ":")
+			uri := strings.Join(parts[:len(parts)-1], ":")
+			startInt, err := strconv.ParseInt(parts[len(parts)-1], 16, 64)
+			if err != nil {
+				return err
+			}
+			endInt := int64(math.MaxInt64)
+			if len(end) > 0 {
+				parts = strings.Split(string(end), ":")
+				i, err := strconv.ParseInt(parts[len(parts)-1], 16, 64)
+				if err != nil {
+					return err
+				}
+				endInt = i
+			}
+			ch, wait := s.s.Read(ctx, uri, startInt, endInt, maxLen)
+			for records := range ch {
+				rows := make([]row, 0, len(records))
+				for _, record := range records {
+					type message struct {
+						At       time.Time `json:"a"`
+						Raw      string    `json:"r"`
+						Sequence int       `json:"s"`
 					}
-					v, err := item.Value()
+					m := message{
+						At:       record.At,
+						Raw:      string(record.Blob),
+						Sequence: int(record.Seq),
+					}
+					b, err := json.Marshal(m)
 					if err != nil {
 						return err
 					}
-					r := row{
-						key:   make([]byte, len(k)),
-						value: string(v),
-					}
-					copy(r.key, k)
-					last = r.key
-					batch = append(batch, r)
-					if len(batch) >= maxLen {
-						return nil
-					}
+					rows = append(rows, row{
+						key:   []byte(fmt.Sprintf("%s:%016X", uri, record.Seq)),
+						value: string(b),
+					})
 				}
-				return io.EOF
-			})
-			if err != nil && err != io.EOF {
-				return errors.Wrap(err, "batch db view")
+				batch = append(batch, rows...)
+				flush()
+			}
+			err = wait()
+			if err != nil {
+				return err
 			}
 			flush()
-			if err == io.EOF {
-				return nil
-			}
+			return nil
 		}
 	})
 	return ch, eg.Wait
@@ -243,9 +250,12 @@ func transform(
 // Read queries the embedded key/value database and streams results back to the client. The frequency
 // at which responses are sent can be tuned by setting the input_limit, output_limit, and max_duration variables.
 func (s *Server) Read(req *emitio.ReadRequest, stream emitio.Emitio_ReadServer) error {
+	zap.L().Debug("starting read request")
 	ti, ok := s.transformers.Load(req.TransformerId)
 	if !ok {
-		return grpc.Errorf(codes.NotFound, "transformer id not found")
+		err := grpc.Errorf(codes.NotFound, "transformer id not found")
+		zap.L().Error("loading transformer", zap.Error(err))
+		return err
 	}
 	t, ok := ti.(Transformer)
 	if !ok {
@@ -279,10 +289,12 @@ Loop:
 				cancel()
 				err := waitReply()
 				if err != nil {
+					zap.L().Error("wait reply", zap.Error(err))
 					return err
 				}
 				err = waitRows()
 				if err != nil {
+					zap.L().Error("wait rows", zap.Error(err))
 					return err
 				}
 				if req.Tail {
@@ -297,6 +309,7 @@ Loop:
 			}
 			err := stream.Send(reply)
 			if err != nil {
+				zap.L().Error("send", zap.Error(err))
 				return err
 			}
 			start = reply.LastInputKey
@@ -341,29 +354,8 @@ func (s *Server) Run(ctx context.Context) error {
 	for _, i := range s.ingresses {
 		i := i // capture local variable
 		eg.Go(func() error {
-			uri := i.URI()
 			seq := 0
-			// get sequence from database
-			s.db.View(func(txn *badger.Txn) error {
-				opts := badger.DefaultIteratorOptions
-				opts.PrefetchValues = false
-				it := txn.NewIterator(opts)
-				prefix := []byte(uri)
-				var key []byte
-				for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
-					item := it.Item()
-					key = item.Key()
-				}
-				if key != nil {
-					parts := bytes.Split(key, []byte{':'})
-					i, err := strconv.ParseInt(string(parts[len(parts)-1]), 16, 0)
-					if err != nil {
-						return err
-					}
-					seq = int(i)
-				}
-				return nil
-			})
+			// TODO get seq from storage
 			msgch, wait := i.Ingress(ctx)
 			for {
 				select {
@@ -373,26 +365,17 @@ func (s *Server) Run(ctx context.Context) error {
 					if !active {
 						return wait()
 					}
-					type message struct {
-						At       time.Time `json:"a"`
-						Raw      string    `json:"r"`
-						Sequence int       `json:"s"`
-					}
 					seq++
 					myseq := seq
-					b, err := json.Marshal(message{
-						At:       time.Now(),
-						Raw:      msg,
-						Sequence: myseq,
-					})
+					r := Record{
+						At:   time.Now(),
+						Blob: []byte(msg),
+						Seq:  int64(myseq),
+					}
+					err := s.s.Write(ctx, i.URI(), []Record{r})
 					if err != nil {
 						return err
 					}
-					key := fmt.Sprintf("%s:%016X", uri, myseq)
-					s.db.Update(func(txn *badger.Txn) error {
-						dur := time.Minute * 30
-						return txn.SetWithTTL([]byte(key), b, dur)
-					})
 					s.cond.L.Lock()
 					s.count++
 					s.cond.L.Unlock()
@@ -401,33 +384,14 @@ func (s *Server) Run(ctx context.Context) error {
 			}
 		})
 	}
-	eg.Go(func() error {
-		// We recommend setting discardRatio to 0.5, thus indicating that a file be
-		// rewritten if half the space can be discarded.
-		t := time.NewTicker(time.Second * 15)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return nil
-			case <-t.C:
-				t0 := time.Now()
-				err := s.db.RunValueLogGC(0.5)
-				if err != nil && err != badger.ErrNoRewrite {
-					return err
-				}
-				zap.L().Debug("ran garbage collection", zap.Duration("elapsed", time.Since(t0)))
-			}
-		}
-	})
 	return eg.Wait()
 }
 
 type ServerOption func(context.Context, *Server) error
 
-func WithDB(db *badger.DB) ServerOption {
+func WithStorage(store Storage) ServerOption {
 	return func(ctx context.Context, s *Server) error {
-		s.db = db
+		s.s = store
 		return nil
 	}
 }

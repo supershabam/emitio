@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"time"
 
+	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -18,7 +19,7 @@ type Record struct {
 }
 
 type Storage interface {
-	Read(ctx context.Context, uri string, start, end, batchSize int) (<-chan []Record, Wait)
+	Read(ctx context.Context, uri string, start, end int64, batchSize int) (<-chan []Record, Wait)
 	Write(ctx context.Context, uri string, records []Record) error
 }
 
@@ -27,7 +28,7 @@ type SQLiteStore struct {
 }
 
 func NewSQLiteStore(ctx context.Context, rawuri string) (*SQLiteStore, error) {
-	if rawuri != "memory:///" {
+	if rawuri != "memory://" {
 		return nil, errors.New("in memory is the only supported store right now")
 	}
 	db, err := sql.Open("sqlite3", ":memory:")
@@ -42,6 +43,7 @@ func NewSQLiteStore(ctx context.Context, rawuri string) (*SQLiteStore, error) {
 }
 
 func (s *SQLiteStore) Write(ctx context.Context, uri string, records []Record) error {
+	zap.L().Debug("sqlite store write", zap.String("uri", uri), zap.Int("num_records", len(records)))
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -60,6 +62,7 @@ func (s *SQLiteStore) Write(ctx context.Context, uri string, records []Record) e
 }
 
 func (s *SQLiteStore) Read(ctx context.Context, uri string, start, end int64, batchSize int) (<-chan []Record, Wait) {
+	zap.L().Debug("sqlite store read", zap.String("uri", uri), zap.Int64("start", start), zap.Int64("end", end))
 	ch := make(chan []Record)
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
@@ -82,6 +85,7 @@ func (s *SQLiteStore) Read(ctx context.Context, uri string, start, end int64, ba
 			case <-ctx.Done():
 				return nil
 			case ch <- records:
+				zap.L().Debug("sqlite store read send records", zap.String("uri", uri), zap.Int64("start", start), zap.Int64("end", end), zap.Int("num_records", len(records)))
 			}
 		}
 		return nil
