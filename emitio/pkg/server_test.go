@@ -38,11 +38,11 @@ func TestTransform(t *testing.T) {
 		"{\"a\":\"2018-01-15T12:07:24.186726127-08:00\",\"r\":\"sldfkjsdjklfhi\\n\",\"s\":1}",
 		"{\"a\":\"2018-01-15T12:12:32.977232909-08:00\",\"r\":\"sldfkjsdjklfhi\\n\",\"s\":2}",
 	}
-	acc, out, err := tr.Transform(ctx, acc, in[0])
+	acc, out, err := tr.Transform(ctx, acc, in)
 	require.Nil(t, err)
 	assert.Equal(t, `{"count":1}`, acc)
 	assert.Equal(t, 2, len(out))
-	acc, out, err = tr.Transform(ctx, acc, in[1])
+	acc, out, err = tr.Transform(ctx, acc, in)
 	assert.Nil(t, err)
 }
 
