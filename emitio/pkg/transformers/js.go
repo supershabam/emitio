@@ -1,339 +1,136 @@
 package transformers
 
-// #cgo LDFLAGS: -L${SRCDIR} -lChakraCore
+// #cgo CFLAGS: -I. -Os -std=c99 -Wall -fstrict-aliasing
+// #cgo LDFLAGS: -lm -ltransformd
+// #include <stdio.h>
+// #include <stdlib.h>
+// #include "duktape.h"
+// #include "transform.h"
 /*
-#include "ChakraCore.h"
-#include <stdlib.h>
+
+static cstring* makeCharArray(int size) {
+        return calloc(sizeof(char*), size);
+}
+
+static void setArrayString(cstring* a, char *s, int n) {
+        a[n] = s;
+}
+
+static char* getArrayString(cstring* a, int n) {
+	return a[n];
+}
+
+static void freeCharArray(cstring* a, int size) {
+        int i;
+        for (i = 0; i < size; i++)
+                free(a[i]);
+        free(a);
+}
+
+static void sandbox_fatal(void *udata, const char *msg) {
+	(void) udata;  // Suppress warning.
+	fprintf(stderr, "FATAL: %s\n", (msg ? msg : "no message"));
+	fflush(stderr);
+	exit(1); // must not return
+}
+
+static duk_context* create_heap() {
+	return duk_create_heap(NULL,
+					NULL,
+					NULL,
+					NULL,
+					sandbox_fatal);
+}
 */
 import "C"
 import (
 	"context"
 	"fmt"
-	"runtime"
 	"unsafe"
-
-	"github.com/pkg/errors"
 )
 
-var jsInvalidReference C.JsContextRef
-
-// chakra core makes use of thread-local storage, so we must make sure that
-// the goroutine interacting with its code is the same os thread.
-var workCh chan func()
-
-func init() {
-	workCh = make(chan func())
-	go func() {
-		runtime.LockOSThread()
-		defer runtime.UnlockOSThread()
-		for work := range workCh {
-			work()
-		}
-	}()
+func toCStringsArray(in []string) *C.cstring {
+	a := C.makeCharArray(C.int(len(in)))
+	for idx, v := range in {
+		C.setArrayString(a, C.CString(v), C.int(idx))
+	}
+	return a
 }
 
-func do(fn func() error) error {
-	var err error
-	done := make(chan struct{})
-	workCh <- func() {
-		defer close(done)
-		err = fn()
+type TransformIn struct {
+	acc   string
+	lines []string
+	in    *C.transform_param
+}
+
+func (ti *TransformIn) From(in *C.transform_param) {
+	if ti.in != nil {
+		ti.Free()
 	}
-	<-done
-	return err
+	ti.in = in
+	ti.acc = C.GoString(in.accumulator)
+	ti.lines = make([]string, in.nlines)
+	for i := 0; i < len(ti.lines); i++ {
+		ti.lines[i] = C.GoString(C.getArrayString(in.lines, C.int(i)))
+	}
+}
+
+func (ti *TransformIn) C() C.transform_param {
+	if ti.in != nil {
+		return *ti.in
+	}
+	ti.in = new(C.transform_param)
+	ti.in.accumulator = C.CString(ti.acc)
+	ti.in.lines = toCStringsArray(ti.lines)
+	ti.in.nlines = C.int(len(ti.lines))
+	return *ti.in
+}
+
+func (ti *TransformIn) Free() {
+	if ti.in == nil {
+		return
+	}
+	C.freeCharArray(ti.in.lines, ti.in.nlines)
+	C.free(unsafe.Pointer(ti.in.accumulator))
+	ti.in = nil
 }
 
 type JS struct {
-	runtime *C.JsRuntimeHandle
-	context *C.JsContextRef
-}
-
-func addref(r C.JsRef, name string) {
-	var errCode C.JsErrorCode
-	var count C.uint
-	errCode = C.JsAddRef(r, &count)
-	if errCode != C.JsNoError {
-		panic("add ref for " + name)
-	}
-	// zap.L().Info("added ref", zap.String("name", name), zap.Int("count", int(count)))
-}
-
-func rmref(r C.JsRef, name string) {
-	var errCode C.JsErrorCode
-	var count C.uint
-	errCode = C.JsRelease(r, &count)
-	if errCode != C.JsNoError {
-		panic("rm ref for " + name)
-	}
-	// zap.L().Info("removed ref", zap.String("name", name), zap.Int("count", int(count)))
-}
-
-func javascriptify(value interface{}) (*C.JsValueRef, error) {
-	var result C.JsValueRef
-	var errCode C.JsErrorCode
-	switch value := value.(type) {
-	case []string:
-		errCode = C.JsCreateArray(C.uint(len(value)), &result)
-		if errCode != C.JsNoError {
-			return nil, errors.New("js create array")
-		}
-		for i, v := range value {
-			val, err := javascriptify(v)
-			if err != nil {
-				return nil, err
-			}
-			var idx C.JsValueRef
-			errCode = C.JsDoubleToNumber(C.double(float64(i)), &idx)
-			if errCode != C.JsNoError {
-				return nil, errors.New("js double to number")
-			}
-			errCode = C.JsSetIndexedProperty(result, idx, *val)
-			if errCode != C.JsNoError {
-				return nil, errors.New("js set indexed property")
-			}
-		}
-		return &result, nil
-	case string:
-		cs := C.CString(value)
-		defer C.free(unsafe.Pointer(cs))
-		errCode = C.JsCreateString(cs, C.size_t(len(value)), &result)
-		if errCode != C.JsNoError {
-			return nil, errors.New("js create string")
-		}
-		return &result, nil
-	default:
-		return nil, fmt.Errorf("unable to javascriptify value of type %T", value)
-	}
-}
-
-func golangify(value C.JsValueRef) (interface{}, error) {
-	var errCode C.JsErrorCode
-	var t C.JsValueType
-	errCode = C.JsGetValueType(value, &t)
-	if errCode != C.JsNoError {
-		return nil, fmt.Errorf("get value type")
-	}
-	switch t {
-	case C.JsArray:
-		return golangifyArray(value)
-	case C.JsString:
-		return golangifyString(value)
-	default:
-		return nil, fmt.Errorf("unhandled js value type %+v", t)
-	}
-}
-
-func golangifyString(value C.JsValueRef) (string, error) {
-	var errCode C.JsErrorCode
-	var l C.size_t
-	errCode = C.JsCopyString(value, nil, 0, &l)
-	if errCode != C.JsNoError {
-		return "", errors.New("copy string get length")
-	}
-	// cs := C.malloc(C.size_t(C.sizeof(*C.char)) * l)
-	buf := make([]byte, l)
-	cs := C.CString(string(buf))
-	defer C.free(unsafe.Pointer(cs))
-	errCode = C.JsCopyString(value, cs, l, nil)
-	if errCode != C.JsNoError {
-		return "", errors.New("copy string get length")
-	}
-	return C.GoStringN(cs, C.int(l)), nil
-}
-
-func golangifyArray(value C.JsValueRef) ([]interface{}, error) {
-	var errCode C.JsErrorCode
-	l, err := property(value, "length")
-	if err != nil {
-		return nil, errors.Wrap(err, "property length")
-	}
-	var f C.double
-	errCode = C.JsNumberToDouble(l, &f)
-	if errCode != C.JsNoError {
-		return nil, errors.Wrap(err, "number to double")
-	}
-	result := []interface{}{}
-	length := int(f)
-	for i := 0; i < length; i++ {
-		var idx C.JsValueRef
-		errCode = C.JsDoubleToNumber(C.double(float64(i)), &idx)
-		if errCode != C.JsNoError {
-			return nil, errors.Wrap(err, "double to number")
-		}
-		var item C.JsValueRef
-		errCode = C.JsGetIndexedProperty(value, idx, &item)
-		if errCode != C.JsNoError {
-			return nil, errors.Wrap(err, "get indexed property")
-		}
-		gitem, err := golangify(item)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, gitem)
-	}
-	return result, nil
-}
-
-func propertyID(name string) (C.JsPropertyIdRef, error) {
-	var result C.JsPropertyIdRef
-	var errCode C.JsErrorCode
-	cs := C.CString(name)
-	defer C.free(unsafe.Pointer(cs))
-	errCode = C.JsCreatePropertyId(cs, C.size_t(len(name)), &result)
-	if errCode != C.JsNoError {
-		return nil, fmt.Errorf("error %+v creating property id=%s", errCode, name)
-	}
-	return result, nil
-}
-
-func property(object C.JsValueRef, name string) (C.JsValueRef, error) {
-	var result C.JsValueRef
-	var errCode C.JsErrorCode
-	propID, err := propertyID(name)
-	if err != nil {
-		return nil, errors.Wrap(err, "propertyID")
-	}
-	errCode = C.JsGetProperty(object, propID, &result)
-	if errCode != C.JsNoError {
-		return nil, fmt.Errorf("get property %s", name)
-	}
-	return result, nil
-}
-
-func (js *JS) Transform(ctx context.Context, acc string, lines []string) (string, []string, error) {
-	var v interface{}
-	err := do(func() error {
-		var errCode C.JsErrorCode
-		var (
-			global,
-			undefined,
-			result C.JsValueRef
-		)
-		errCode = C.JsSetCurrentContext(*js.context)
-		if errCode != C.JsNoError {
-			return fmt.Errorf("js set current context")
-		}
-		errCode = C.JsGetGlobalObject(&global)
-		if errCode != C.JsNoError {
-			return fmt.Errorf("get global object")
-		}
-		fn, err := property(global, "transform")
-		if err != nil {
-			return errors.Wrap(err, "property")
-		}
-		jsAcc, err := javascriptify(acc)
-		if err != nil {
-			return err
-		}
-		addref(C.JsRef(*jsAcc), "jsacc")
-		defer rmref(C.JsRef(*jsAcc), "jsacc")
-		jsLines, err := javascriptify(lines)
-		if err != nil {
-			return err
-		}
-		addref(C.JsRef(*jsLines), "jslines")
-		defer rmref(C.JsRef(*jsLines), "jslines")
-		errCode = C.JsGetUndefinedValue(&undefined)
-		if errCode != C.JsNoError {
-			return fmt.Errorf("get undefined value")
-		}
-		errCode = C.JsGetUndefinedValue(&result)
-		if errCode != C.JsNoError {
-			return fmt.Errorf("get undefined value into result")
-		}
-		addref(C.JsRef(result), "result")
-		defer rmref(C.JsRef(result), "result")
-		args := []C.JsValueRef{
-			undefined,
-			*jsAcc,
-			*jsLines,
-		}
-		// note that args[0] is thisArg of the call; actual args start at index 1
-		errCode = C.JsCallFunction(fn, &args[0], C.ushort(len(args)), &result)
-		if errCode != C.JsNoError {
-			return fmt.Errorf("call function")
-		}
-		v, err = golangify(result)
-		if err != nil {
-			return errors.Wrap(err, "golangify")
-		}
-		return nil
-	})
-	if err != nil {
-		return "", nil, err
-	}
-	l, ok := v.([]interface{})
-	if !ok {
-		return "", nil, errors.New("expected transform result to be list")
-	}
-	if len(l) < 2 {
-		return "", nil, errors.New("expected transform to return 2 results")
-	}
-	acc, ok = l[0].(string)
-	if !ok {
-		return "", nil, errors.New("expected first result to be string")
-	}
-	l, ok = l[1].([]interface{})
-	if !ok {
-		return "", nil, errors.New("expected second result to be list")
-	}
-	result := []string{}
-	for _, li := range l {
-		s, ok := li.(string)
-		if !ok {
-			return "", nil, errors.New("expected second result item to be string")
-		}
-		result = append(result, s)
-	}
-	return acc, result, nil
+	script string
 }
 
 func NewJS(script string) (*JS, error) {
-	js := &JS{}
-	err := do(func() error {
-		var (
-			runtime C.JsRuntimeHandle
-			context C.JsContextRef
-		)
-		js.runtime = &runtime
-		js.context = &context
-		var errCode C.JsErrorCode
-		errCode = C.JsCreateRuntime(C.JsRuntimeAttributeNone, nil, js.runtime)
-		if errCode != C.JsNoError {
-			return fmt.Errorf("js create runtime")
-		}
-		errCode = C.JsCreateContext(*js.runtime, js.context)
-		if errCode != C.JsNoError {
-			return fmt.Errorf("js create context")
-		}
-		errCode = C.JsSetCurrentContext(*js.context)
-		if errCode != C.JsNoError {
-			return fmt.Errorf("js set current context")
-		}
-		var fname C.JsValueRef
-		cs := C.CString("code_source_perhaps_unnecessary")
-		defer C.free(unsafe.Pointer(cs))
-		errCode = C.JsCreateString(cs, C.size_t(len("code_source_perhaps_unnecessary")), &fname)
-		if errCode != C.JsNoError {
-			return fmt.Errorf("js create string for source")
-		}
-		var scriptSource C.JsValueRef
-		cscript := C.CString(script)
-		defer C.free(unsafe.Pointer(cscript))
-		errCode = C.JsCreateExternalArrayBuffer(unsafe.Pointer(cscript), C.uint(len(script)), nil, nil, &scriptSource)
-		if errCode != C.JsNoError {
-			return fmt.Errorf("create external array buffer")
-		}
-		// Run the script.
-		var currentSourceContext C.JsSourceContext
-		errCode = C.JsRun(scriptSource, currentSourceContext, fname, C.JsParseScriptAttributeNone, nil)
-		if errCode != C.JsNoError {
-			return fmt.Errorf("js run")
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
+	// var dctx *C.duk_context
+	// dctx = C.create_heap()
+	// src := C.CString(script)
+	// defer C.free(unsafe.Pointer(src))
+	// C.duk_eval_raw(dctx, src, 0, 0|C.DUK_COMPILE_SAFE|C.DUK_COMPILE_EVAL|C.DUK_COMPILE_NOSOURCE|C.DUK_COMPILE_STRLEN|C.DUK_COMPILE_NOFILENAME)
+	return &JS{
+		script: script,
+	}, nil
+}
+
+func (js *JS) Transform(ctx context.Context, acc string, lines []string) (string, []string, error) {
+	var dctx *C.duk_context
+	dctx = C.create_heap()
+	defer C.duk_destroy_heap(dctx)
+	src := C.CString(js.script)
+	defer C.free(unsafe.Pointer(src))
+	C.duk_eval_raw(dctx, src, 0, 0|C.DUK_COMPILE_SAFE|C.DUK_COMPILE_EVAL|C.DUK_COMPILE_NOSOURCE|C.DUK_COMPILE_STRLEN|C.DUK_COMPILE_NOFILENAME)
+	C.duk_require_stack(dctx, C.duk_idx_t(len(lines)+10))
+	var out C.transform_param
+	ti := &TransformIn{
+		acc:   acc,
+		lines: lines,
 	}
-	return js, nil
+	defer ti.Free()
+	buf := make([]byte, 1024*4)
+	err := C.CString(string(buf))
+	defer C.free(unsafe.Pointer(err))
+	rc := C.transform(dctx, ti.C(), &out, err)
+	if rc != 0 {
+		return "", nil, fmt.Errorf("rc=%d,err=%s", rc, C.GoString(err))
+	}
+	ti.From(&out)
+	return ti.acc, ti.lines, nil
 }

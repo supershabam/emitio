@@ -83,16 +83,7 @@ const init = {
   lastAcc: "",
   nodes: [],
   value: `function transform(acc, lines) {
-  let a = JSON.parse(acc)
-  let out = lines
-    .map(line => JSON.parse(line))
-    .map(line => {
-      return line
-    })
-    .filter(line => true)
-    .map(line => JSON.stringify(line))
-  a.count = (a.count || 0) + 1
-  return [JSON.stringify(a), out]
+  return [acc, lines]
 }`,
   rows: [],
   heatmap: {

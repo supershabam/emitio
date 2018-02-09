@@ -92,7 +92,7 @@ function transform(acc, lines) {
 			for idx := range tc.inacc {
 				acc, lines, err := js.Transform(context.Background(), tc.inacc[idx], tc.inlines[idx])
 				if err != nil {
-					require.NotNil(t, tc.outerr[idx])
+					require.NotNil(t, tc.outerr[idx], "got error %s when not expecting idx=%d", err.Error(), idx)
 					assert.Contains(t, err.Error(), tc.outerr[idx].Error())
 					continue
 				}

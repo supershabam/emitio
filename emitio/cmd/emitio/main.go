@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"time"
 
+	"github.com/pkg/profile"
 	"github.com/spf13/pflag"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
@@ -30,6 +31,7 @@ import (
 // --forward https://ingress.emit.io/
 // --storage file:///tmp/emitio/
 func main() {
+	prof := profile.Start(profile.MemProfile)
 	// flags
 	pflag.StringArrayP("origin", "o", []string{}, "tags to include with ALL messages collected")
 	ingressURIs := pflag.StringArrayP("ingress", "i", []string{}, "udp://127.0.0.1:9009")
@@ -112,6 +114,8 @@ func main() {
 	})
 	err = eg.Wait()
 	if err != nil {
+		prof.Stop()
+		time.Sleep(1)
 		zap.L().Fatal("unrecoverable error", zap.Error(err))
 	}
 }
