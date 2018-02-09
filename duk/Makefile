@@ -33,3 +33,7 @@ transform:	$(DUKTAPE_SOURCES) transform.c
 
 transform.so:	$(DUKTAPE_SOURCES) transform.c
 	$(CC) -shared -fPIC -o $@ $(DEFINES) $(CCOPTS) $(DUKTAPE_SOURCES) transform.c $(CCLIBS)
+
+.PHONY: install
+install: transform.so
+	cp transform.so /usr/local/lib/libtransform.so
