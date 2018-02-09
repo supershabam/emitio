@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+docker build . -t transform-env
+docker run --rm -v $(pwd):/app -w /app transform-env $@

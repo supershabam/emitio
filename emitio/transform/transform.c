@@ -5,7 +5,7 @@
 #include "duktape.h"
 #include "transform.h"
 
-int transform(duk_context* ctx, const transform_in in, transform_in* out) {
+int transform(duk_context* ctx, const transform_param in, transform_param* out, char* err) {
     int retval = 0;
     duk_push_global_object(ctx);
     duk_get_prop_string(ctx, -1, "transform");
