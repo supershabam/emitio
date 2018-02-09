@@ -81,8 +81,8 @@ const mapDispatchToProps = dispatch => {
         request: {
           node: node,
           accumulator: "{}",
-          input_limit: 10000,
-          output_limit: 10000,
+          input_limit: 1,
+          output_limit: 1,
           duration_limit: 15,
           javascript: javascript
         }

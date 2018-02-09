@@ -10,5 +10,4 @@ RUN echo "export PATH=$PATH:/usr/local/go/bin" >> /root/.bashrc
 RUN wget https://aka.ms/chakracore/cc_linux_x64_1_8_0 -O /tmp/chakra.tgz
 RUN tar -xf /tmp/chakra.tgz
 RUN cp /ChakraCoreFiles/lib/libChakraCore.so /usr/lib/
-COPY libtransform.so /usr/local/lib/libtransform.so
-COPY libtransformd.so /usr/local/lib/libtransformd.so
+COPY transform/target/libtransformd_linux_amd64.so /usr/local/lib/libtransformd.so

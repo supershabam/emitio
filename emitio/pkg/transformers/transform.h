@@ -2,12 +2,12 @@
 
 typedef char* cstring;
 
-typedef struct transform_in transform_in;
+typedef struct transform_param transform_param;
 
-struct transform_in {
+struct transform_param {
     char* accumulator;
     cstring* lines;
     int nlines;
 };
 
-int transform(duk_context*, const transform_in, transform_in*);
+int transform(duk_context*, const transform_param, transform_param*, char*);

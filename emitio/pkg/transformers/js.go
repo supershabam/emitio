@@ -26,6 +26,21 @@ static void freeCharArray(cstring* a, int size) {
                 free(a[i]);
         free(a);
 }
+
+static void sandbox_fatal(void *udata, const char *msg) {
+	(void) udata;  // Suppress warning.
+	fprintf(stderr, "FATAL: %s\n", (msg ? msg : "no message"));
+	fflush(stderr);
+	exit(1); // must not return
+}
+
+static duk_context* create_heap() {
+	return duk_create_heap(NULL,
+					NULL,
+					NULL,
+					NULL,
+					sandbox_fatal);
+}
 */
 import "C"
 import (
@@ -45,10 +60,10 @@ func toCStringsArray(in []string) *C.cstring {
 type TransformIn struct {
 	acc   string
 	lines []string
-	in    *C.transform_in
+	in    *C.transform_param
 }
 
-func (ti *TransformIn) From(in *C.transform_in) {
+func (ti *TransformIn) From(in *C.transform_param) {
 	if ti.in != nil {
 		ti.Free()
 	}
@@ -60,11 +75,11 @@ func (ti *TransformIn) From(in *C.transform_in) {
 	}
 }
 
-func (ti *TransformIn) C() C.transform_in {
+func (ti *TransformIn) C() C.transform_param {
 	if ti.in != nil {
 		return *ti.in
 	}
-	ti.in = new(C.transform_in)
+	ti.in = new(C.transform_param)
 	ti.in.accumulator = C.CString(ti.acc)
 	ti.in.lines = toCStringsArray(ti.lines)
 	ti.in.nlines = C.int(len(ti.lines))
@@ -86,25 +101,28 @@ type JS struct {
 
 func NewJS(script string) (*JS, error) {
 	var dctx *C.duk_context
-	dctx = C.duk_create_heap(nil, nil, nil, nil, nil)
+	dctx = C.create_heap()
 	src := C.CString(script)
 	defer C.free(unsafe.Pointer(src))
-	C.duk_eval_raw(dctx, src, 0, 0|C.DUK_COMPILE_EVAL|C.DUK_COMPILE_NOSOURCE|C.DUK_COMPILE_STRLEN|C.DUK_COMPILE_NOFILENAME)
+	C.duk_eval_raw(dctx, src, 0, 0|C.DUK_COMPILE_SAFE|C.DUK_COMPILE_EVAL|C.DUK_COMPILE_NOSOURCE|C.DUK_COMPILE_STRLEN|C.DUK_COMPILE_NOFILENAME)
 	return &JS{
 		dctx: dctx,
 	}, nil
 }
 
 func (js *JS) Transform(ctx context.Context, acc string, lines []string) (string, []string, error) {
-	var out C.transform_in
+	var out C.transform_param
 	ti := &TransformIn{
 		acc:   acc,
 		lines: lines,
 	}
 	defer ti.Free()
-	rc := C.transform(js.dctx, ti.C(), &out)
+	buf := make([]byte, 1024*4)
+	err := C.CString(string(buf))
+	defer C.free(unsafe.Pointer(err))
+	rc := C.transform(js.dctx, ti.C(), &out, err)
 	if rc != 0 {
-		return "", nil, fmt.Errorf("error %d from transform", rc)
+		return "", nil, fmt.Errorf("rc=%d,err=%s", rc, C.GoString(err))
 	}
 	ti.From(&out)
 	return ti.acc, ti.lines, nil

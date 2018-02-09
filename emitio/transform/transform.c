@@ -6,9 +6,18 @@
 #include "transform.h"
 
 int transform(duk_context* ctx, const transform_param in, transform_param* out, char* err) {
-    int retval = 0;
-    duk_push_global_object(ctx);
-    duk_get_prop_string(ctx, -1, "transform");
+    duk_push_global_object(ctx); // [global]
+    if (duk_is_error(ctx, -1)) {
+        sprintf(err, "%s", duk_safe_to_string(ctx, -1));
+        duk_set_top(ctx, 0);
+        return 1;
+    }
+    duk_get_prop_string(ctx, -1, "transform"); // [global, transform]
+    if (duk_is_error(ctx, -1)) {
+        sprintf(err, "%s", duk_safe_to_string(ctx, -1));
+        duk_set_top(ctx, 0);
+        return 1;
+    }    
     duk_push_string(ctx, in.accumulator);
     duk_push_array(ctx);
     for (int i = 0; i < in.nlines; i++) {
@@ -16,34 +25,37 @@ int transform(duk_context* ctx, const transform_param in, transform_param* out, 
         duk_put_prop_index(ctx, -2, i);
     }
     if (duk_pcall(ctx, 2 /* nargs */) != 0) {
-        printf("Error: %s\n", duk_safe_to_string(ctx, -1));
-        retval = 1;
-        goto finished;
+        sprintf(err, "%s", duk_safe_to_string(ctx, -1));
+        duk_set_top(ctx, 0);
+        return 1;
     }
     duk_get_prop_string(ctx, -1, "length");
+    if (duk_is_error(ctx, -1)) {
+        sprintf(err, "%s", duk_safe_to_string(ctx, -1));
+        duk_set_top(ctx, 0);
+        return 1;
+    }    
     duk_int_t l;
     l = duk_get_int(ctx, -1);
     duk_pop(ctx);
     if (l < 2) {
-        printf("expected 2 items in result\n");
-        retval = 1;
-        goto finished;
+        sprintf(err, "expected 2 items in result but got %d", l);
+        duk_set_top(ctx, 0);
+        return 1;
     }
     duk_get_prop_index(ctx, -1, 0);
     if (!duk_is_string(ctx, -1)) {
-        printf("expected first item to be string\n");
-        retval = 1;
-        duk_pop(ctx);
-        goto finished;
+        sprintf(err, "expected first item to be string");
+        duk_set_top(ctx, 0);
+        return 1;
     }
     out->accumulator = strdup(duk_safe_to_string(ctx, -1));
     duk_pop(ctx);
     duk_get_prop_index(ctx, -1, 1);
     if (!duk_is_array(ctx, -1)) {
-        printf("expected second item to be array\n");
-        retval = 1;
-        duk_pop(ctx);
-        goto finished;
+        sprintf(err, "expected second item to be array");
+        duk_set_top(ctx, 0);
+        return 1;
     }
     duk_get_prop_string(ctx, -1, "length");
     l = duk_get_int(ctx, -1);
@@ -53,14 +65,13 @@ int transform(duk_context* ctx, const transform_param in, transform_param* out, 
     for (int i = 0; i < l; i++) {
         duk_get_prop_index(ctx, -1, i);
         if (!duk_is_string(ctx, -1)) {
-            printf("expected item in second result to be string\n");
-            duk_pop(ctx);
-            goto finished;
+            sprintf(err, "expected item idx=%d in second result to be string", i);
+            duk_set_top(ctx, 0);
+            return 1;
         }
         out->lines[i] = strdup(duk_safe_to_string(ctx, -1));
         duk_pop(ctx);
     }
-    duk_pop(ctx);
-finished:
-    return retval;
+    duk_set_top(ctx, 0);
+    return 0;
 }
