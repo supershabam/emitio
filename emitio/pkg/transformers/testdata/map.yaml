@@ -1,0 +1,17 @@
+---
+program: |
+  function transform(acc, lines) {
+    return [acc, lines.map(function(line) {
+      return line + line
+    })]
+  }
+inputs:
+- acc: ""
+  lines:
+  - one
+  - two
+  output:
+    acc: ""
+    lines:
+    - oneone
+    - twotwo
