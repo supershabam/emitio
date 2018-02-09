@@ -4,6 +4,7 @@ package main
 // #cgo LDFLAGS: -lduktape -lm -ltransform
 // #include <stdio.h>
 // #include <stdlib.h>
+// #include "duktape.h"
 // #include "transform.h"
 /*
 
@@ -79,13 +80,18 @@ func (ti *TransformIn) Free() {
 }
 
 func main() {
+	var ctx *C.duk_context
+	ctx = C.duk_create_heap(nil, nil, nil, nil, nil)
+	script := C.CString(`function transform(acc, lines) { return [acc, lines] }`)
+	defer C.free(unsafe.Pointer(script))
+	C.duk_eval_raw(ctx, script, 0, 0|C.DUK_COMPILE_EVAL|C.DUK_COMPILE_NOSOURCE|C.DUK_COMPILE_STRLEN|C.DUK_COMPILE_NOFILENAME)
 	var out C.transform_in
 	ti := &TransformIn{
 		acc:   "{}",
 		lines: []string{"hello", "there"},
 	}
 	defer ti.Free()
-	rc := C.transform(ti.C(), &out)
+	rc := C.transform(ctx, ti.C(), &out)
 	if rc != 0 {
 		panic("error")
 	}

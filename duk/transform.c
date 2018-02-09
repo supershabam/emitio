@@ -22,22 +22,8 @@ static void push_file_as_string(duk_context *ctx, const char *filename) {
     }
 }
 
-int transform(const transform_in in, transform_in* out) {
-    duk_context *ctx = NULL;
+int transform(duk_context* ctx, const transform_in in, transform_in* out) {
     int retval = 0;
-    ctx = duk_create_heap_default();
-    if (!ctx) {
-        retval = 1;
-        return retval;
-    }
-    duk_print_alert_init(ctx, 0 /*flags*/);
-    push_file_as_string(ctx, "transform.js");
-    if (duk_peval(ctx) != 0) {
-        retval = 1;
-        goto finished;
-    }
-    // ignore result
-    duk_pop(ctx);
     duk_push_global_object(ctx);
     duk_get_prop_string(ctx, -1, "transform");
     duk_push_string(ctx, in.accumulator);
@@ -93,7 +79,6 @@ int transform(const transform_in in, transform_in* out) {
     }
     duk_pop(ctx);
 finished:
-    duk_destroy_heap(ctx);
     return retval;
 }
 

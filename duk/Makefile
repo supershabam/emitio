@@ -27,12 +27,18 @@ DEFINES =
 # http://wiki.duktape.org/Configuring.html
 
 # For debugging, use -O0 -g -ggdb, and don't add -fomit-frame-pointer
+env:
+	docker build . -t duk-env
+	docker run --rm -ti -v $(shell pwd):/app duk-env
 
 transform:	$(DUKTAPE_SOURCES) transform.c
 	$(CC) -o $@ $(DEFINES) $(CCOPTS) $(DUKTAPE_SOURCES) transform.c $(CCLIBS)
 
 transform.so:	$(DUKTAPE_SOURCES) transform.c
 	$(CC) -shared -fPIC -o $@ $(DEFINES) $(CCOPTS) $(DUKTAPE_SOURCES) transform.c $(CCLIBS)
+
+transformd.so: $(DUKTAPE_SOURCES) transform.c
+	$(CC) -shared -fPIC -g -o $@ $(DEFINES) -I./duktape-2.2.0/src -I./duktape-2.2.0/extras/print-alert $(DUKTAPE_SOURCES) transform.c
 
 .PHONY: install
 install: transform.so
