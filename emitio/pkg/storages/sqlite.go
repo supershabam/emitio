@@ -7,11 +7,149 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/supershabam/emitio/emitio/pkg"
 )
 
 type SQLite struct {
-	db *sql.DB
+	blocksets map[string]*blockset
+	l         sync.Mutex
+}
+
+type SQLiteOption func(ctx context.Context, s *SQLite) error
+
+func NewSQLite(ctx context.Context, opts ...SQLiteOption) (*SQLite, error) {
+	s := &SQLite{
+		blocksets: map[string]*blockset{},
+	}
+	for _, opt := range opts {
+		err := opt(ctx, s)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return s, nil
+}
+
+type blockset struct {
+	maxSize int
+	maxAge  time.Duration
+	create  func(context.Context, int64) (*block, error)
+	blocks  []*block
+	l       sync.RWMutex
+}
+
+func (bs *blockset) read(ctx context.Context, start, end int64, batch int) ([]pkg.SeqRecord, error) {
+	bs.l.RLock()
+	defer bs.l.RUnlock()
+	for _, blk := range bs.blocks {
+		if blk.lastSeq < start {
+			continue
+		}
+		records, err := blk.read(ctx, start, end, batch)
+		if err != nil {
+			return nil, err
+		}
+		if len(records) == 0 {
+			continue
+		}
+		return records, nil
+	}
+	return []pkg.SeqRecord{}, nil
+}
+
+func (bs *blockset) write(ctx context.Context, at time.Time, records []pkg.Record) error {
+	bs.l.Lock()
+	defer bs.l.Unlock()
+	blk := bs.blocks[len(bs.blocks)-1]
+	var rest []pkg.Record
+	if at.Sub(blk.lastAt) > bs.maxAge {
+		rest = records
+		records = []pkg.Record{}
+	} else if blk.count+int64(len(records)) > int64(bs.maxSize) {
+		// for now, just make a whole new block if we're going to be over, it's easier
+		rest = records
+		records = []pkg.Record{}
+	}
+	err := blk.write(ctx, records)
+	if err != nil {
+		return err
+	}
+	if len(rest) == 0 {
+		return nil
+	}
+	// assume we won't be writing more records in a single write than a max size
+	blk, err = bs.create(ctx, blk.lastSeq)
+	if err != nil {
+		return err
+	}
+	bs.blocks = append(bs.blocks, blk)
+	return blk.write(ctx, rest)
+}
+
+func (s *SQLite) blockset(ctx context.Context, uri string) (*blockset, error) {
+	var bs *blockset
+	s.l.Lock()
+	bs = s.blocksets[uri]
+	if bs != nil {
+		s.l.Unlock()
+		return bs, nil
+	}
+	defer s.l.Unlock()
+	// TODO make configurable
+	bs = &blockset{
+		maxAge:  time.Hour * 24,
+		maxSize: 1e6,
+		blocks:  []*block{},
+		create: func(ctx context.Context, seq int64) (*block, error) {
+			return newBlock(ctx, ":memory:", seq)
+		},
+	}
+	blk, err := bs.create(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+	bs.blocks = append(bs.blocks, blk)
+	s.blocksets[uri] = bs
+	return bs, nil
+}
+
+func (s *SQLite) Read(ctx context.Context, uri string, start, end int64, batch int) (<-chan []pkg.SeqRecord, pkg.Wait) {
+	ch := make(chan []pkg.SeqRecord)
+	eg, ctx := errgroup.WithContext(ctx)
+	eg.Go(func() error {
+		defer close(ch)
+		bs, err := s.blockset(ctx, uri)
+		if err != nil {
+			return err
+		}
+		for start < end {
+			records, err := bs.read(ctx, start, end, batch)
+			if err != nil {
+				return err
+			}
+			if len(records) == 0 {
+				return nil
+			}
+			start = records[len(records)-1].Seq + 1
+			select {
+			case <-ctx.Done():
+				return nil
+			case ch <- records:
+			}
+		}
+		return nil
+	})
+	return ch, eg.Wait
+}
+
+func (s *SQLite) Write(ctx context.Context, uri string, records []pkg.Record) error {
+	bs, err := s.blockset(ctx, uri)
+	if err != nil {
+		return err
+	}
+	return bs.write(ctx, time.Now(), records)
 }
 
 type block struct {
@@ -130,95 +268,3 @@ func (b *block) read(ctx context.Context, start, end int64, batchSize int) ([]pk
 	}
 	return result, nil
 }
-
-// func NewSQLite(ctx context.Context, rawuri string) (*SQLite, error) {
-// 	if rawuri != "memory://" {
-// 		return nil, errors.New("in memory is the only supported  right now")
-// 	}
-// 	db, err := sql.Open("sqlite3", ":memory:")
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	_, err = db.ExecContext(ctx, `CREATE TABLE t(seq INTEGER PRIMARY KEY ASC, at INTEGER, blob BLOB);`)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	return &SQLite{db}, nil
-// }
-
-// func (s *SQLite) Write(ctx context.Context, uri string, records []pkg.Record) error {
-// 	zap.L().Debug("sqlite  write", zap.String("uri", uri), zap.Int("num_records", len(records)))
-// 	tx, err := s.db.BeginTx(ctx, nil)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	stmt, err := tx.PrepareContext(ctx, `INSERT INTO t (seq, at, blob) VALUES (?, ?, ?)`)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	for _, record := range records {
-// 		_, err := stmt.ExecContext(ctx, record.Seq, record.At.UnixNano(), record.Blob)
-// 		if err != nil {
-// 			return err
-// 		}
-// 	}
-// 	return tx.Commit()
-// }
-
-// func (s *SQLite) Read(ctx context.Context, uri string, start, end int64, batchSize int) (<-chan []pkg.Record, pkg.Wait) {
-// 	zap.L().Debug("sqlite  read", zap.String("uri", uri), zap.Int64("start", start), zap.Int64("end", end))
-// 	ch := make(chan []pkg.Record)
-// 	eg, ctx := errgroup.WithContext(ctx)
-// 	eg.Go(func() error {
-// 		defer close(ch)
-// 		stmt, err := s.db.PrepareContext(ctx, `SELECT at, blob, seq FROM t WHERE seq >= ? AND seq < ? LIMIT ?`)
-// 		if err != nil {
-// 			return err
-// 		}
-// 		defer stmt.Close()
-// 		for start < end {
-// 			records, err := s.read(ctx, stmt, start, end, batchSize)
-// 			if err != nil {
-// 				return err
-// 			}
-// 			if len(records) == 0 {
-// 				return nil
-// 			}
-// 			start = records[len(records)-1].Seq + 1
-// 			select {
-// 			case <-ctx.Done():
-// 				return nil
-// 			case ch <- records:
-// 				zap.L().Debug("sqlite  read send records", zap.String("uri", uri), zap.Int64("start", start), zap.Int64("end", end), zap.Int("num_records", len(records)))
-// 			}
-// 		}
-// 		return nil
-// 	})
-// 	return ch, eg.Wait
-// }
-
-// func (s *SQLite) read(ctx context.Context, stmt *sql.Stmt, start, end int64, batchSize int) ([]pkg.Record, error) {
-// 	rows, err := stmt.QueryContext(ctx, start, end, batchSize)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	defer rows.Close()
-// 	result := make([]pkg.Record, 0, batchSize)
-// 	for rows.Next() {
-// 		var (
-// 			at   int64
-// 			blob []byte
-// 			seq  int64
-// 		)
-// 		err := rows.Scan(&at, &blob, &seq)
-// 		if err != nil {
-// 			return nil, err
-// 		}
-// 		result = append(result, pkg.Record{
-// 			At:   time.Unix(0, at),
-// 			Blob: blob,
-// 			Seq:  seq,
-// 		})
-// 	}
-// 	return result, nil
-// }
