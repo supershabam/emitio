@@ -38,12 +38,12 @@ func main() {
 	// flags
 	pflag.StringArrayP("origin", "o", []string{}, "tags to include with ALL messages collected")
 	ingressURIs := pflag.StringArrayP("ingress", "i", []string{}, "udp://127.0.0.1:9009")
-	loggerURI := pflag.StringP("logger", "l", "stderr:///?level=info", "configure the logger")
-	// storageURI := pflag.StringP("storage", "s", "memory://", "configure storage destination")
+	// loggerURI := pflag.StringP("logger", "l", "stderr:///?level=info", "configure the logger")
+	storageURI := pflag.StringP("storage", "s", "memory://", "configure storage destination")
 	targetURI := pflag.StringP("target", "t", "https://edge.emit.io/", "where to connect to")
 	pflag.Parse()
 	// set up logging
-	logger, err := pkg.ParseLogger(*loggerURI)
+	logger, err := zap.NewProduction()
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -62,7 +62,9 @@ func main() {
 		os.Exit(1)
 	}()
 	// set up storage
-	store, err := storages.NewSQLite(ctx)
+	store, err := storages.NewSQLite(ctx,
+		storages.WithResolverConfig(*storageURI),
+	)
 	if err != nil {
 		zap.L().Fatal("parse storage", zap.Error(err))
 	}

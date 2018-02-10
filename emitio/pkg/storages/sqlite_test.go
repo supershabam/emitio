@@ -9,10 +9,11 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"github.com/supershabam/emitio/emitio/pkg"
 	"go.uber.org/zap"
 
 	_ "github.com/mattn/go-sqlite3"
+
+	"github.com/supershabam/emitio/emitio/pkg"
 )
 
 func TestBlock(t *testing.T) {
