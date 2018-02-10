@@ -79,10 +79,13 @@ const mapDispatchToProps = dispatch => {
       dispatch({
         type: "READ_NODE",
         request: {
+          uri: "syslog+udp://127.0.0.1:514",
+          start: 0,
+          end: Number.MAX_SAFE_INTEGER,
           node: node,
           accumulator: "{}",
-          input_limit: 1,
-          output_limit: 1,
+          input_limit: 1000,
+          output_limit: 1000,
           duration_limit: 15,
           javascript: javascript
         }

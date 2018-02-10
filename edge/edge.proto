@@ -38,19 +38,20 @@ message MakeTransformerReply {
 }
 
 message ReadRequest {
-    bytes start = 1;
-    bytes end = 2;
-    string transformer_id = 3;
-    string accumulator = 4;
-    uint32 input_limit = 5;
-    uint32 output_limit = 6;
-    double duration_limit = 7;
-    bool tail = 8;
-    string node = 9;
+    string uri = 1;
+    string transformer_id = 2;
+    string accumulator = 3;
+    int64 start = 4;
+    int64 end = 5;
+    bool tail = 6;
+    uint32 input_limit = 7;
+    uint32 output_limit = 8;
+    double duration_limit = 9;
+    string node = 10;
 }
 
 message ReadReply {
     repeated string rows = 1;
     string last_accumulator = 2;
-    bytes last_input_key = 3;
+    int64 last_offset = 3;
 }

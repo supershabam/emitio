@@ -8,6 +8,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/supershabam/emitio/emitio/pkg"
+	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -24,6 +25,8 @@ func (u *UDP) Ingress(ctx context.Context) (<-chan string, pkg.Wait) {
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
 		defer close(ch)
+		defer zap.L().Debug("ingress closing", zap.String("uri", u.URI()))
+		zap.L().Debug("udp ingress listening", zap.String("addr", u.uri.Host))
 		pc, err := net.ListenPacket("udp", u.uri.Host)
 		if err != nil {
 			return errors.Wrap(err, "listen packet")
@@ -42,6 +45,7 @@ func (u *UDP) Ingress(ctx context.Context) (<-chan string, pkg.Wait) {
 				case <-ctx.Done():
 					return nil
 				case ch <- string(message):
+					zap.L().Debug("sent message", zap.String("ingress", u.URI()))
 				}
 			}
 			if err != nil {

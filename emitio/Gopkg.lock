@@ -38,10 +38,22 @@
   revision = "1e59b77b52bf8e4b449a57e6f79f21226d571845"
 
 [[projects]]
+  name = "github.com/mattn/go-sqlite3"
+  packages = ["."]
+  revision = "6c771bb9887719704b210e87e934f08be014bdb1"
+  version = "v1.6.0"
+
+[[projects]]
   name = "github.com/pkg/errors"
   packages = ["."]
   revision = "645ef00459ed84a119197bfb8d8205042c6df63d"
   version = "v0.8.0"
+
+[[projects]]
+  name = "github.com/pkg/profile"
+  packages = ["."]
+  revision = "5b67d428864e92711fcbd2f8629456121a56d91f"
+  version = "v1.2.1"
 
 [[projects]]
   name = "github.com/pmezard/go-difflib"
@@ -124,6 +136,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "0b6336f68f2d232bdbbc9c1d2ada984197abca2c222dd388ecc82a70b6bca65a"
+  inputs-digest = "a3e38d8b62462dc10422adee6f37c8c90924c0f100cbb1739b336bd43dc6e39f"
   solver-name = "gps-cdcl"
   solver-version = 1
