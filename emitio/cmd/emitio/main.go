@@ -17,6 +17,9 @@ import (
 	"github.com/supershabam/emitio/emitio/pkg"
 	"github.com/supershabam/emitio/emitio/pkg/ingresses"
 	"github.com/supershabam/emitio/emitio/pkg/listeners"
+	"github.com/supershabam/emitio/emitio/pkg/storages"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 // --origin pod=$(pod_name)
@@ -36,7 +39,7 @@ func main() {
 	pflag.StringArrayP("origin", "o", []string{}, "tags to include with ALL messages collected")
 	ingressURIs := pflag.StringArrayP("ingress", "i", []string{}, "udp://127.0.0.1:9009")
 	loggerURI := pflag.StringP("logger", "l", "stderr:///?level=info", "configure the logger")
-	storageURI := pflag.StringP("storage", "s", "memory://", "configure storage destination")
+	// storageURI := pflag.StringP("storage", "s", "memory://", "configure storage destination")
 	targetURI := pflag.StringP("target", "t", "https://edge.emit.io/", "where to connect to")
 	pflag.Parse()
 	// set up logging
@@ -59,7 +62,7 @@ func main() {
 		os.Exit(1)
 	}()
 	// set up storage
-	store, err := pkg.ParseStorage(*storageURI)
+	store, err := storages.NewSQLite(ctx)
 	if err != nil {
 		zap.L().Fatal("parse storage", zap.Error(err))
 	}

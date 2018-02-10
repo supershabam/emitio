@@ -366,11 +366,9 @@ func (s *Server) Run(ctx context.Context) error {
 						return wait()
 					}
 					seq++
-					myseq := seq
 					r := Record{
 						At:   time.Now(),
 						Blob: []byte(msg),
-						Seq:  int64(myseq),
 					}
 					err := s.s.Write(ctx, i.URI(), []Record{r})
 					if err != nil {

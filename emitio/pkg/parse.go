@@ -1,17 +1,10 @@
 package pkg
 
 import (
-	"context"
 	"strings"
 
 	"github.com/pkg/errors"
 )
-
-// ParseStorage initializes a datastore from uri configuration
-func ParseStorage(rawuri string) (Storage, error) {
-	ctx := context.TODO()
-	return NewSQLiteStore(ctx, rawuri)
-}
 
 func ParseOriginTags(tags []string) (map[string]string, error) {
 	m := make(map[string]string)

@@ -10,6 +10,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/supershabam/emitio/emitio/pkg"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 func TestBlock(t *testing.T) {
