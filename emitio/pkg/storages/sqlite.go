@@ -3,6 +3,8 @@ package storages
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"io/ioutil"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -64,7 +66,7 @@ func (bs *blockset) write(ctx context.Context, at time.Time, records []pkg.Recor
 	defer bs.l.Unlock()
 	blk := bs.blocks[len(bs.blocks)-1]
 	var rest []pkg.Record
-	if at.Sub(blk.lastAt) > bs.maxAge {
+	if !blk.lastAt.IsZero() && at.Sub(blk.lastAt) > bs.maxAge {
 		rest = records
 		records = []pkg.Record{}
 	} else if blk.count+int64(len(records)) > int64(bs.maxSize) {
@@ -103,7 +105,11 @@ func (s *SQLite) blockset(ctx context.Context, uri string) (*blockset, error) {
 		maxSize: 1e6,
 		blocks:  []*block{},
 		create: func(ctx context.Context, seq int64) (*block, error) {
-			return newBlock(ctx, ":memory:", seq)
+			name, err := ioutil.TempDir("", "emitio")
+			if err != nil {
+				return nil, err
+			}
+			return newBlock(ctx, fmt.Sprintf("%s/%d.sq3", name, seq), seq)
 		},
 	}
 	blk, err := bs.create(ctx, 0)
