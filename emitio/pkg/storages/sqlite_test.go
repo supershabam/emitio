@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/supershabam/emitio/emitio/pkg"
+	"go.uber.org/zap"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -45,8 +46,14 @@ func TestBlock(t *testing.T) {
 }
 
 func TestSQLite(t *testing.T) {
+	l, _ := zap.NewDevelopment()
+	zap.ReplaceGlobals(l)
+	path, err := ioutil.TempDir("", "emitio")
+	require.Nil(t, err)
 	ctx := context.Background()
-	s, err := NewSQLite(ctx)
+	s, err := NewSQLite(ctx,
+		WithResolverConfig("file://"+path),
+	)
 	require.Nil(t, err)
 	t0 := time.Now()
 	err = s.Write(ctx, "one", []pkg.Record{
@@ -91,4 +98,37 @@ func TestSQLite(t *testing.T) {
 	err = wait()
 	require.Nil(t, err)
 	require.Len(t, records, 0)
+	err = s.Close()
+	require.Nil(t, err)
+	// recreate sql lite and expect to find the same data
+	s, err = NewSQLite(ctx,
+		WithResolverConfig("file://"+path),
+	)
+	require.Nil(t, err)
+	records = []pkg.SeqRecord{}
+	ch, wait = s.Read(ctx, "one", 0, math.MaxInt64, 1e3)
+	for batch := range ch {
+		records = append(records, batch...)
+	}
+	err = wait()
+	require.Nil(t, err)
+	require.Len(t, records, 1)
+	records = []pkg.SeqRecord{}
+	ch, wait = s.Read(ctx, "two", 0, math.MaxInt64, 1e3)
+	for batch := range ch {
+		records = append(records, batch...)
+	}
+	err = wait()
+	require.Nil(t, err)
+	require.Len(t, records, 2)
+	records = []pkg.SeqRecord{}
+	ch, wait = s.Read(ctx, "nonexistent", 0, math.MaxInt64, 1e3)
+	for batch := range ch {
+		records = append(records, batch...)
+	}
+	err = wait()
+	require.Nil(t, err)
+	require.Len(t, records, 0)
+	err = s.Close()
+	require.Nil(t, err)
 }

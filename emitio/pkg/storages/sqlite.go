@@ -3,35 +3,228 @@ package storages
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"net/url"
+	"os"
+	"path"
+	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/pkg/errors"
+	uuid "github.com/satori/go.uuid"
 	"github.com/supershabam/emitio/emitio/pkg"
 )
 
 type SQLite struct {
 	blocksets map[string]*blockset
 	l         sync.Mutex
+	resolver  resolver
 }
 
 type SQLiteOption func(ctx context.Context, s *SQLite) error
 
-func NewSQLite(ctx context.Context, opts ...SQLiteOption) (*SQLite, error) {
-	s := &SQLite{
-		blocksets: map[string]*blockset{},
+type resolver interface {
+	Blocksets(context.Context) (map[string]*blockset, error)
+	Create(context.Context, string) (*blockset, error)
+}
+
+const fileInfoVersion1 = "v1"
+
+type fileInfo struct {
+	ID      string `json:"id"`
+	URI     string `json:"uri"`
+	Version string `json:"v"`
+}
+
+type fileResolver struct {
+	base string
+}
+
+func (fr *fileResolver) blocksetFn(uri string) func(ctx context.Context) (*blockset, error) {
+	return func(ctx context.Context) (*blockset, error) {
+		bs := &blockset{
+			maxSize: 1024,      // TODO make configurable
+			maxAge:  time.Hour, // TODO make configurable
+			create: func(ctx context.Context, seq int64) (*block, error) {
+				id := uuid.NewV4().String()
+				b, err := json.Marshal(fileInfo{
+					ID:      id,
+					URI:     uri,
+					Version: fileInfoVersion1,
+				})
+				if err != nil {
+					return nil, errors.Wrap(err, "json marshal filename contents")
+				}
+				file := base64.RawURLEncoding.EncodeToString(b) + ".db"
+				zap.L().Debug("creating new block", zap.String("file", file))
+				return newBlock(ctx, path.Join(fr.base, file), seq)
+			},
+			blocks: []*block{},
+		}
+		return bs, nil
 	}
+}
+
+func (fr *fileResolver) Blocksets(ctx context.Context) (map[string]*blockset, error) {
+	err := os.MkdirAll(fr.base, 0755)
+	if err != nil {
+		return nil, errors.Wrap(err, "ensuring base path")
+	}
+	blocksets := map[string]*blockset{}
+	err = filepath.Walk(fr.base, func(p string, info os.FileInfo, err error) error {
+		zap.L().Debug("walking", zap.String("file", p))
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		if !strings.HasSuffix(p, ".db") {
+			return nil
+		}
+		filename := strings.TrimSuffix(path.Base(p), ".db")
+		zap.L().Debug("parsing filename for information", zap.String("filename", filename))
+		b, err := base64.RawURLEncoding.DecodeString(filename)
+		if err != nil {
+			// skip
+			zap.L().Debug("skipping file because of base64 decode error", zap.Error(err))
+			return nil
+		}
+		var fi fileInfo
+		err = json.Unmarshal(b, &fi)
+		if err != nil {
+			// skip
+			zap.L().Debug("skipping file because of json unmarshal error", zap.Error(err))
+			return nil
+		}
+		if fi.Version != fileInfoVersion1 {
+			// skip
+			zap.L().Debug("skipping file because version mismatch", zap.String("version", fi.Version))
+			return nil
+		}
+		blk, err := openBlock(ctx, p)
+		if err != nil {
+			return err
+		}
+		if _, ok := blocksets[fi.URI]; !ok {
+			bs, err := fr.blocksetFn(fi.URI)(ctx)
+			if err != nil {
+				return err
+			}
+			blocksets[fi.URI] = bs
+		}
+		bs := blocksets[fi.URI]
+		bs.blocks = append(bs.blocks, blk)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, blockset := range blocksets {
+		sort.Slice(blockset.blocks, func(i, j int) bool {
+			// handle the case where we've created a new block, but not inserted anything into it
+			if blockset.blocks[i].lastSeq == blockset.blocks[j].lastSeq {
+				return blockset.blocks[i].count > blockset.blocks[j].count
+			}
+			return blockset.blocks[i].lastSeq < blockset.blocks[j].lastSeq
+		})
+	}
+	return blocksets, nil
+}
+
+func (fr *fileResolver) Create(ctx context.Context, uri string) (*blockset, error) {
+	bs, err := fr.blocksetFn(uri)(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "create")
+	}
+	blk, err := bs.create(ctx, 0)
+	if err != nil {
+		return nil, errors.Wrap(err, "memory resolver populate first block")
+	}
+	bs.blocks = append(bs.blocks, blk)
+	return bs, nil
+}
+
+type memoryResolver struct{}
+
+func (mr *memoryResolver) Blocksets(context.Context) (map[string]*blockset, error) {
+	return map[string]*blockset{}, nil
+}
+
+func (mr *memoryResolver) Create(ctx context.Context, uri string) (*blockset, error) {
+	bs := &blockset{
+		maxSize: 1024,
+		maxAge:  time.Hour,
+		create: func(ctx context.Context, seq int64) (*block, error) {
+			return newBlock(ctx, ":memory:", seq)
+		},
+		blocks: []*block{},
+	}
+	blk, err := bs.create(ctx, 0)
+	if err != nil {
+		return nil, errors.Wrap(err, "memory resolver populate first block")
+	}
+	bs.blocks = append(bs.blocks, blk)
+	return bs, nil
+}
+
+func WithResolverConfig(rawuri string) SQLiteOption {
+	return func(ctx context.Context, s *SQLite) error {
+		u, err := url.Parse(rawuri)
+		if err != nil {
+			return errors.Wrap(err, "url parse")
+		}
+		switch u.Scheme {
+		case "memory":
+			s.resolver = &memoryResolver{}
+			return nil
+		case "file":
+			s.resolver = &fileResolver{
+				base: u.Path,
+			}
+			return nil
+		default:
+			return fmt.Errorf("unhandled scheme=%s for sqlite resolver", u.Scheme)
+		}
+	}
+}
+
+func NewSQLite(ctx context.Context, opts ...SQLiteOption) (*SQLite, error) {
+	s := &SQLite{}
 	for _, opt := range opts {
 		err := opt(ctx, s)
 		if err != nil {
 			return nil, err
 		}
 	}
+	blocksets, err := s.resolver.Blocksets(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "new sqlite creating blockets")
+	}
+	s.blocksets = blocksets
 	return s, nil
+}
+
+// Close will call close on all currently open db handles. All reads/writes to SQLite
+// must be finished before calling close and it is unsafe to use SQLite after calling
+// Close. TODO this should be improved with a "isClosed" guard around function calls
+// and Close should respect ongoing read/writes and gracefully shut them down.
+func (s *SQLite) Close() error {
+	for _, bs := range s.blocksets {
+		for _, b := range bs.blocks {
+			b.db.Close()
+		}
+	}
+	return nil
 }
 
 type blockset struct {
@@ -99,18 +292,9 @@ func (s *SQLite) blockset(ctx context.Context, uri string) (*blockset, error) {
 		return bs, nil
 	}
 	defer s.l.Unlock()
-	// TODO make configurable
-	bs = &blockset{
-		maxAge:  time.Hour * 24,
-		maxSize: 1e6,
-		blocks:  []*block{},
-		create: func(ctx context.Context, seq int64) (*block, error) {
-			name, err := ioutil.TempDir("", "emitio")
-			if err != nil {
-				return nil, err
-			}
-			return newBlock(ctx, fmt.Sprintf("%s/%d.sq3", name, seq), seq)
-		},
+	bs, err := s.resolver.Create(ctx, uri)
+	if err != nil {
+		return nil, err
 	}
 	blk, err := bs.create(ctx, 0)
 	if err != nil {
@@ -190,6 +374,7 @@ func newBlock(ctx context.Context, dsn string, seq int64) (*block, error) {
 }
 
 func openBlock(ctx context.Context, dsn string) (*block, error) {
+	zap.L().Debug("opening block", zap.String("dsn", dsn))
 	db, err := sql.Open("sqlite3", dsn)
 	if err != nil {
 		return nil, err
