@@ -103,8 +103,9 @@ func (s *Server) readNode(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 	var req struct {
-		Start         string  `json:"start"`
-		End           string  `json:"end"`
+		URI           string  `json:"uri"`
+		Start         int64   `json:"start"`
+		End           int64   `json:"end"`
 		Javascript    string  `json:"javascript"`
 		Accumulator   string  `json:"accumulator"`
 		InputLimit    uint32  `json:"input_limit"`
@@ -135,8 +136,9 @@ func (s *Server) readNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	stream, err := c.Read(ctx, &edge.ReadRequest{
-		Start:         []byte(req.Start),
-		End:           []byte(req.End),
+		Uri:           req.URI,
+		Start:         req.Start,
+		End:           req.End,
 		TransformerId: t.Id,
 		Accumulator:   req.Accumulator,
 		InputLimit:    req.InputLimit,
@@ -165,7 +167,7 @@ func (s *Server) readNode(w http.ResponseWriter, r *http.Request) {
 			err := conn.WriteJSON(map[string]interface{}{
 				"last_accumulator": reply.LastAccumulator,
 				"rows":             reply.Rows,
-				"last_input_key":   string(reply.LastInputKey),
+				"last_offset":      int(reply.LastOffset),
 			})
 			if err != nil {
 				zap.L().Error("write json", zap.Error(err))
@@ -279,7 +281,7 @@ func (s *Server) read(w http.ResponseWriter, r *http.Request) {
 					"node":             m.node,
 					"last_accumulator": m.reply.LastAccumulator,
 					"rows":             m.reply.Rows,
-					"last_input_key":   string(m.reply.LastInputKey),
+					"last_offset":      m.reply.LastOffset,
 				})
 				if err != nil {
 					return err
@@ -392,6 +394,7 @@ func (s *Server) Read(req *edge.ReadRequest, stream edge.Edge_ReadServer) error 
 	}
 	client := emitio.NewEmitioClient(cc)
 	resp, err := client.Read(stream.Context(), &emitio.ReadRequest{
+		Uri:           req.Uri,
 		Start:         req.Start,
 		End:           req.End,
 		TransformerId: req.TransformerId,
@@ -412,7 +415,7 @@ func (s *Server) Read(req *edge.ReadRequest, stream edge.Edge_ReadServer) error 
 		err = stream.Send(&edge.ReadReply{
 			Rows:            reply.Rows,
 			LastAccumulator: reply.LastAccumulator,
-			LastInputKey:    reply.LastInputKey,
+			LastOffset:      reply.LastOffset,
 		})
 		if err != nil {
 			return err

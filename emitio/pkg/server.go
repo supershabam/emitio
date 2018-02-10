@@ -11,6 +11,7 @@ import (
 	uuid "github.com/satori/go.uuid"
 	"github.com/supershabam/emitio/emitio/pb/emitio"
 	"github.com/supershabam/emitio/emitio/pkg/transformers"
+	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -32,8 +33,9 @@ type Server struct {
 // NewServer initializes a server and will error if dependencies are missing.
 func NewServer(ctx context.Context, opts ...ServerOption) (*Server, error) {
 	s := &Server{
-		ingresses: []Ingresser{},
-		origin:    map[string]string{},
+		ingresses:    []Ingresser{},
+		origin:       map[string]string{},
+		transformers: map[string]Transformer{},
 	}
 	for _, opt := range opts {
 		err := opt(ctx, s)
@@ -113,13 +115,18 @@ func (s *Server) Read(req *emitio.ReadRequest, stream emitio.Emitio_ReadServer) 
 	for {
 		ch, wait := s.s.Read(ctx, req.Uri, start, req.End, batchSize)
 		for batch := range ch {
+			zap.L().Debug("Hi")
 			if len(batch) == 0 {
 				continue
 			}
 			start = batch[len(batch)-1].Seq + 1
 			input := make([]string, len(batch))
 			for _, r := range batch {
-				b, err := json.Marshal(r)
+				b, err := json.Marshal(map[string]interface{}{
+					"s": r.Seq,
+					"r": string(r.Blob),
+					"a": float64(r.At.UnixNano()) / float64(time.Second),
+				})
 				if err != nil {
 					return err
 				}
