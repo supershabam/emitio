@@ -83,7 +83,7 @@ const mapDispatchToProps = dispatch => {
           start: 0,
           end: Number.MAX_SAFE_INTEGER,
           node: node,
-          accumulator: "{}",
+          accumulator: `{"process":"nginx"}`,
           input_limit: 1000,
           output_limit: 1000,
           duration_limit: 15,

@@ -6,10 +6,8 @@ import { connect } from "react-redux";
 const Rows = props => {
   let rows = props.value.map(row => {
     return (
-      <tr key={row.s}>
-        <td>{row.s}</td>
-        <td>{row.a}</td>
-        <td>{row.r}</td>
+      <tr>
+        <td>{row}</td>
       </tr>
     );
   });
@@ -19,7 +17,6 @@ const Rows = props => {
         displaying {props.value.length} of {props.total}
       </span>
       <hr />
-      <span>{props.accumulator}</span>
       <table>
         <tbody>{rows}</tbody>
       </table>
