@@ -76,6 +76,7 @@ func main() {
 			if err != nil {
 				zap.L().Fatal("unable to make ingress", zap.String("ingress", uri))
 			}
+			zap.L().Info("created ingress", zap.String("uri", uri))
 			il = append(il, i)
 		}
 	}
