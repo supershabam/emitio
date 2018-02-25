@@ -26,3 +26,9 @@ env:
 		-v $(shell pwd):/root/go/src/github.com/supershabam/emitio/emitio \
 		-w /root/go/src/github.com/supershabam/emitio/emitio \
 		emitio-build
+
+.PHONY: publish
+publish: TAG = emitio/emitio:$(shell cat VERSION)
+publish:
+	docker build -f emitio.dockerfile -t $(TAG) .
+	docker push $(TAG)
