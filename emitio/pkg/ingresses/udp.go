@@ -46,6 +46,7 @@ func (u *UDP) Ingress(ctx context.Context) (<-chan string, pkg.Wait) {
 					return nil
 				case ch <- string(message):
 					zap.L().Debug("sent message", zap.String("ingress", u.URI()))
+					pkg.IncIngressMessage(ctx, u.URI())
 				}
 			}
 			if err != nil {
