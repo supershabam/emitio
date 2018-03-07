@@ -5,12 +5,31 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strconv"
+	"strings"
 	"text/template"
 	"time"
 )
 
 type MySQL struct {
 	db *sql.DB
+}
+
+type Histogram struct {
+	Breakdown []string
+	Buckets   []*Bucket
+}
+
+func (h *Histogram) print() {
+	fmt.Printf("breakdown: %s\n", strings.Join(h.Breakdown, ","))
+	for _, b := range h.Buckets {
+		fmt.Printf("le%f		%d\n", b.LE, b.Count)
+	}
+}
+
+type Bucket struct {
+	LE    float64
+	Count int64
 }
 
 func (m *MySQL) Heatmap(ctx context.Context,
@@ -30,9 +49,9 @@ func (m *MySQL) Heatmap(ctx context.Context,
 	SELECT
 		CASE
 			{{range $b := .Buckets}}
-			WHEN {{$b.Field}} <= {{$b.LE}} THEN "{{$b.LE}}"
+			WHEN {{$b.Field}} <= {{$b.LE}} THEN '{{$b.LE}}'
 			{{end}}
-			ELSE "+inf"
+			ELSE '+inf'
 		END AS le
 		{{range $idx, $b := .Breakdowns}}
 		, {{$b}} AS b_{{$idx}}
@@ -112,17 +131,17 @@ func (m *MySQL) Heatmap(ctx context.Context,
 	if err != nil {
 		return err
 	}
-	fmt.Printf("%s\n", buf.Bytes())
 	r, err := m.db.QueryContext(ctx, string(buf.Bytes()))
 	if err != nil {
 		return err
 	}
+	histograms := map[string]Histogram{}
 	for r.Next() {
 		var (
-			le    string
+			leStr string
 			count int64
 		)
-		valuePtrs := []interface{}{&count, &le}
+		valuePtrs := []interface{}{&count, &leStr}
 		for _ = range breakdowns {
 			var i string
 			valuePtrs = append(valuePtrs, &i)
@@ -131,13 +150,38 @@ func (m *MySQL) Heatmap(ctx context.Context,
 		if err != nil {
 			return err
 		}
-		fmt.Println(le)
-		fmt.Println(count)
+		bd := []string{}
 		for i := 2; i < len(valuePtrs); i++ {
 			if s, ok := valuePtrs[i].(*string); ok {
-				fmt.Println(*s)
+				bd = append(bd, *s)
 			}
 		}
+		key := strings.Join(bd, ",")
+		h := histograms[key]
+		if len(h.Buckets) == 0 {
+			for _, b := range buckets {
+				h.Buckets = append(h.Buckets, &Bucket{
+					LE:    b,
+					Count: 0,
+				})
+			}
+		}
+		if h.Breakdown == nil {
+			h.Breakdown = bd
+		}
+		le, err := strconv.ParseFloat(leStr, 64)
+		if err != nil {
+			return err
+		}
+		for _, b := range h.Buckets {
+			if le <= b.LE {
+				b.Count = b.Count + count
+			}
+		}
+		histograms[key] = h
+	}
+	for _, h := range histograms {
+		h.print()
 	}
 	return nil
 }
