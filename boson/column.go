@@ -32,7 +32,15 @@ func sequence(filters ...filter) filter {
 	}
 }
 
+// func parallel(selects ...zelect) zelect {
+// 	return func(ctx context.Context, d *Database, in <-chan []uint32) (<-chan [][]interface{}, Wait) {
+
+// 	}
+// }
+
 type filter func(ctx context.Context, d *Database, in <-chan []uint32) (<-chan []uint32, Wait)
+
+// type zelect func(ctx context.Context, d *Database, in <-chan []uint32) (<-chan [][]interface{}, Wait)
 
 type Database struct {
 	index          []time.Time
@@ -236,5 +244,45 @@ func makeStringColumnFilter(source, field string, match func(id, column uint32, 
 			}
 		})
 		return ch, eg.Wait
+	}
+}
+
+func sum(ctx context.Context, in <-chan []uint32, d *Database, source, field string) (float64, error) {
+	var f float64
+	for {
+		select {
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		case ids, active := <-in:
+			if !active {
+				return f, nil
+			}
+			_, vals, err := d.Float64Columns(source, field, ids)
+			if err != nil {
+				return 0, err
+			}
+			for _, v := range vals {
+				f += v
+			}
+		}
+	}
+}
+
+func count(ctx context.Context, in <-chan []uint32, d *Database, source, field string) (float64, error) {
+	var f float64
+	for {
+		select {
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		case ids, active := <-in:
+			if !active {
+				return f, nil
+			}
+			_, vals, err := d.Float64Columns(source, field, ids)
+			if err != nil {
+				return 0, err
+			}
+			f += float64(len(vals))
+		}
 	}
 }

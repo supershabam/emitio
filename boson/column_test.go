@@ -81,7 +81,7 @@ func loadscots() (*Database, error) {
 func BenchmarkColumn(b *testing.B) {
 	ctx := context.Background()
 	f1 := makeStringColumnFilter("src", "Title", func(id, column uint32, value string) bool {
-		return column != math.MaxUint32 && strings.Contains(value, "Human")
+		return column != math.MaxUint32 && strings.Contains(value, "a")
 	})
 	f2 := makeStringColumnFilter("src", "Sponsor", func(id, column uint32, value string) bool {
 		return column != math.MaxUint32 && strings.Contains(value, "Bob")
@@ -91,13 +91,9 @@ func BenchmarkColumn(b *testing.B) {
 	require.Nil(b, err)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		count := 0
 		in, _ := between(ctx, d, time.Now().Add(-time.Hour*24*365*2), time.Now())
-		nextCh, wait := f(ctx, d, in)
-		for next := range nextCh {
-			count += len(next)
-		}
-		err = wait()
+		in, _ = f(ctx, d, in)
+		_, err := sum(ctx, in, d, "src", "ID")
 		require.Nil(b, err)
 	}
 }
@@ -122,5 +118,26 @@ func TestColumn(t *testing.T) {
 	err = wait()
 	require.Nil(t, err)
 	fmt.Printf("count=%d\n", count)
+	assert.True(t, false)
+}
+
+func TestColumnSum(t *testing.T) {
+	ctx := context.Background()
+	f1 := makeStringColumnFilter("src", "Title", func(id, column uint32, value string) bool {
+		return column != math.MaxUint32
+	})
+	f2 := makeStringColumnFilter("src", "Sponsor", func(id, column uint32, value string) bool {
+		return column != math.MaxUint32
+	})
+	f := sequence(f1, f2)
+	d, err := loadscots()
+	require.Nil(t, err)
+	t0 := time.Now()
+	in, _ := between(ctx, d, time.Now().Add(-time.Hour*24*365*2), time.Now())
+	in, _ = f(ctx, d, in)
+	v, err := sum(ctx, in, d, "src", "ID")
+	require.Nil(t, err)
+	fmt.Printf("duration=%s\n", time.Since(t0))
+	fmt.Printf("sum=%f\n", v)
 	assert.True(t, false)
 }
