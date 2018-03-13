@@ -2,40 +2,51 @@ package v1
 
 import (
 	"fmt"
+	"strings"
 	"testing"
-
-	"github.com/VividCortex/gohistogram"
+	"time"
 
 	"github.com/scritchley/orc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestORC(t *testing.T) {
+func makeOrc() (*ORC, error) {
 	r, err := orc.Open("./testdata/output.orc")
+	if err != nil {
+		return nil, err
+	}
+	return &ORC{r}, nil
+}
+
+func TestORC(t *testing.T) {
+	o, err := makeOrc()
 	require.Nil(t, err)
-	defer r.Close()
-	// Create a new Cursor reading the provided columns.
-	c := r.Select("response", "bytes")
-	// Iterate over each stripe in the file.
-	histograms := map[string]*gohistogram.NumericHistogram{}
-	for c.Stripes() {
-		// Iterate over each row in the stripe.
-		for c.Next() {
-			r := c.Row()
-			response, _ := r[0].(int64)
-			bytes, _ := r[1].(int64)
-			key := fmt.Sprintf("%d", response)
-			h := histograms[key]
-			if h == nil {
-				h = gohistogram.NewHistogram(80)
-				histograms[key] = h
-			}
-			h.Add(float64(bytes))
-		}
-	}
-	for k, h := range histograms {
-		fmt.Printf("breakdown: %s\n%s\n", k, h.String())
-	}
+	h, err := o.Histogram(.4, time.Now().Add(-time.Hour*24*365*5), time.Now(), "bytes", []Predicate{
+		{
+			Field: "request",
+			Match: func(s string) bool {
+				return strings.Contains(s, "product_1")
+			},
+		},
+	})
+	require.Nil(t, err)
+	fmt.Printf("%s\n", h.String())
 	assert.True(t, false)
+}
+
+func BenchmarkORC(b *testing.B) {
+	o, err := makeOrc()
+	require.Nil(b, err)
+	for n := 0; n < b.N; n++ {
+		_, err := o.Histogram(0.5, time.Now().Add(-time.Hour*24*7), time.Now(), "bytes", []Predicate{
+			{
+				Field: "remote_ip",
+				Match: func(s string) bool {
+					return s == "37.58.92.201"
+				},
+			},
+		})
+		require.Nil(b, err)
+	}
 }
