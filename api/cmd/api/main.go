@@ -15,7 +15,7 @@ func main() {
 	}
 	zap.ReplaceGlobals(l)
 	ctx := context.Background()
-	s, err := v1.NewServer(ctx)
+	s, err := v1.NewServer(ctx, v1.WithHistogrammer(&v1.Filesystem{Root: "./"}))
 	if err != nil {
 		panic(err)
 	}

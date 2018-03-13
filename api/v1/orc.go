@@ -14,7 +14,7 @@ type ORC struct {
 
 type Predicate struct {
 	Field string
-	Match func(string) bool
+	Match func(interface{}) bool
 }
 
 func (o *ORC) Histogram(sample float64, start, end time.Time, field string, predicates []Predicate) (gohistogram.Histogram, error) {
