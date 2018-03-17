@@ -1,5 +1,9 @@
 type heatmap = {histograms: list(Histogram.histogram)};
 
+let addh = (histograms: list(Histogram.histogram), histogram:Histogram.histogram) => {
+
+}
+
 let clip = (h: Histogram.histogram, start: float, end_: float) => {
   let next = {
     ...h,
