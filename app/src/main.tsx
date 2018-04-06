@@ -6,6 +6,7 @@ import {
   Observer,
   Subject,
   BehaviorSubject,
+  Subscription,
   ReplaySubject,
   from,
   of,
@@ -127,173 +128,58 @@ const affect = (
   return state$;
 };
 
-const action$$ = new Subject<Observable<Action>>();
-const state$ = affect(affector, {}, action$$);
-
-console.log(state$);
-console.log("subscribing");
-state$.subscribe(state => {
-  console.log(state);
-});
-console.log("subscribing");
-state$.subscribe(state => {
-  console.log(state);
-});
-action$$.next(
-  of<Action>({
-    kind: "LoginRequest",
-    username: "supershabam",
-    password: "poop"
-  })
-);
-action$$.next(of<Action>({ kind: "Logout" }));
-
-// const reducer = (state: State, action: Action): State => {
-//   console.log("before", state, action);
-//   switch (action.kind) {
-//     case "LoginRequest":
-//       return { ...state, username: null };
-//     case "LoginSuccess":
-//       return { ...state, username: action.username };
-//     case "logout":
-//       return { ...state, username: null };
-//   }
-//   return state;
-// };
-
-// const affector = (
-//   action$: Observable<Action>,
-//   state$: BehaviorSubject<State>
-// ): Observable<Action> => {
-//   switch (action.kind) {
-//     case "LoginRequest":
-//       if (action.password == "pie") {
-//         return of<Action>({
-//           kind: "LoginSuccess",
-//           username: action.username
-//         }).pipe(delay(250));
-//       }
-//       return of<Action>({
-//         kind: "LoginError",
-//         error: "what even is the pie"
-//       }).pipe(delay(250));
-//   }
-//   return empty();
-// };
-
-// func affect<S, A>(affector AffectorFn<S,A>, init S) observable<S>
-
-// interface GenericIdentityFn<T> {
-//   (arg: T): T;
-// }
-
-// function identity<T>(arg: T): T {
-//   return arg;
-// }
-
-// interface GenericAffectorFn<S, A> {
-//   (state: S, action: A, state$: Observable<S>, action$: Observable<A>): [
-//     S,
-//     Observable<A>
-//   ]
-// }
-
-// function affect<S,A>(state: S, action: A, state$: Observable<S>, action$: Observable<A>): [
-//   S,
-//   Observable<A>
-// ]
-
-// type AffectorFn {
-//   <S, A>(state: S, action: A, state$: Observable<S>, action$: Observable<A>): [
-//     S,
-//     Observable<A>
-//   ];
-// }
-
-// const affector = (
-//   state: State,
-//   action: Action,
-//   state$: Observable<State>,
-//   action$: Observable<Action>
-// ): [State, Observable<Action>] => {
-//   switch (action.kind) {
-//     case "LoginRequest":
-//       return [
-//         state,
-//         of<Action>({ kind: "LoginSuccess", username: "poop" }).pipe(
-//           delay(1500),
-//           takeUntil(
-//             action$.pipe(
-//               filter(action => {
-//                 switch (action.kind) {
-//                   case "LoginRequest":
-//                     return true;
-//                 }
-//                 return false;
-//               })
-//             )
-//           )
-//         )
-//       ];
-//   }
-//   return [state, empty()];
-// };
-
-// const affect = (
-//   init:State,
-//   action$:Observable<Action>,
-//   affector:(State, Action, Observable<State>, Observable<Action>): [
-//   State,
-//   Observable<Action>
-// ]
-// ): Observable<State> {
-
-// }
-
-// // const affect = (affector:AffectorFn<S,A>) {
-
-// // }
-// // const reactor<T, L> = (state:State, action, state$, action$):[]
-
-// // what happens when multiple things subscribe to this observable?
-// // should I be using a behavior subject inside this, or is there
-// // a constructor for a behavior subject observable?
-// const store$: Observable<State> = Observable.create(
-//   (observer: Observer<State>) => {
-//     const init: State = {};
-//     const state$ = new BehaviorSubject<State>(init);
-//     const action$ = action$$.pipe(flatMap(action$ => action$));
-//     let last: State = init;
-//     const sub = action$$.pipe(flatMap(action$ => action$)).subscribe(action => {
-//       const next = reducer(last, action);
-//       state$.next(next);
-//     });
-//     state$.subscribe(state => observer.next(state));
-
-//     return () => {
-//       sub.unsubscribe();
-//       console.log("unsub");
-//     };
-//   }
-// );
-
-// BehaviorSubject.create;
-
 // const action$$ = new Subject<Observable<Action>>();
-// const createStore = (init: State) => {
-//   const state$ = new BehaviorSubject<State>(init);
-//   const state$ = action$$.pipe(
-//     flatMap(action$ => action$),
-//     scan(reduce, init),
-//     tap()
-//   );
-// };
+// const state$ = affect(affector, {}, action$$);
 
-// const store = createStore({});
+interface AppProps {
+  affector: any;
+  init: State;
+  action$: Observable<Action>;
+}
 
-// store.subscribe(console.log);
+class App extends React.Component<AppProps, State> {
+  action$$: Subject<Observable<Action>>;
+  state$: Observable<State>;
+  sub: Subscription;
+  constructor(props: AppProps) {
+    super(props);
 
-// action$$.next(
-//   of<Action>({ kind: "LoginRequest", username: "dingleberry", password: "pie" })
-// );
-// action$$.next(of<Action>({ kind: "logout" }).pipe(delay(1500)));
+    this.state = { username: null };
+  }
+
+  componentDidMount() {
+    this.action$$ = new Subject<Observable<Action>>();
+    this.state$ = affect(this.props.affector, this.props.init, this.action$$);
+    console.log("subscribing to state");
+    this.sub = this.state$.subscribe(state => {
+      console.log("got ur state", state);
+      this.setState(state);
+    });
+    console.log("sending action");
+    this.action$$.next(this.props.action$);
+  }
+
+  componentWillUnmount() {
+    this.sub.unsubscribe();
+  }
+
+  public render() {
+    if (this.state.username) {
+      return <h1>hello + {this.state.username}</h1>;
+    }
+    return <h1>greetings</h1>;
+  }
+}
+
+ReactDOM.render(
+  <App
+    affector={affector}
+    init={{}}
+    action$={of<Action>({
+      kind: "LoginRequest",
+      username: "supershabam",
+      password: "Poop"
+    })}
+  />,
+  document.getElementById("app")
+);
