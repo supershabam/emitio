@@ -122,6 +122,7 @@ const affect = (
         action$$.next(tuple[1]);
       });
     return () => {
+      console.log("unsubscribing");
       sub.unsubscribe();
     };
   });
@@ -174,12 +175,16 @@ class App extends React.Component<AppProps, State> {
 ReactDOM.render(
   <App
     affector={affector}
-    init={{}}
+    init={{ username: null }}
     action$={of<Action>({
       kind: "LoginRequest",
       username: "supershabam",
-      password: "Poop"
+      password: "sekret"
     })}
   />,
   document.getElementById("app")
 );
+
+setTimeout(() => {
+  ReactDOM.render(<h1>and it gone</h1>, document.getElementById("app"));
+}, 500);
