@@ -150,40 +150,62 @@ const { Provider, Consumer } = React.createContext({
 
 const connect = (
   WrappedComponent: React.Component<any, any>,
-  mapState$ToProps?: Function
+  mapState$ToProps?: any
 ) => {
-  return class Connect extends React.Component {
-    static displayName = `Wrapped${WrappedComponent.displayName}`;
+  class Connect<any, any> extends React.Component {
     static WrappedComponent = WrappedComponent;
+    subs: Array<Subscription>;
     constructor(props, context) {
       super(props, context);
       this.state = {};
+      this.subs = [];
+    }
+    componentDidMount() {
+      console.log("component did mount");
+      for (let key in mapState$ToProps) {
+        this.subs = this.subs.concat([
+          mapState$ToProps[key](this.props.store.state$).subscribe(value => {
+            this.setState(prevState => {
+              return { ...prevState, [key]: value };
+            });
+          })
+        ]);
+      }
     }
     render() {
       return (
-        <Consumer>
-          {store => {
-            console.log(store);
-            return (
-              <WrappedComponent
-                state$={store.state$}
-                dispatch={dispatch}
-                {...this.props}
-              />
-            );
-          }}
-        </Consumer>
+        <WrappedComponent
+          state$={this.props.store.state$}
+          dispatch={this.props.store.dispatch}
+          {...(this.props, this.state)}
+        />
       );
     }
+  }
+  return props => {
+    return (
+      <Consumer>
+        {store => {
+          console.log(store);
+          return <Connect store={store} {...props} />;
+        }}
+      </Consumer>
+    );
   };
 };
 
 const App = props => {
   console.log(props);
-  return <h1>hi</h1>;
+  return (
+    <h1 onClick={() => props.dispatch({ kind: "Logout" })}>{props.username}</h1>
+  );
 };
 
-const WApp = connect(App);
+const WApp = connect(App, {
+  username: (state$: Observable<State>) => {
+    return state$.pipe(map((s: State) => s.username));
+  }
+});
 
 ReactDOM.render(
   <Provider value={{ dispatch, state$ }}>
@@ -191,3 +213,12 @@ ReactDOM.render(
   </Provider>,
   document.getElementById("app")
 );
+
+setTimeout(() => {
+  action$$.next(
+    of<Action>({
+      kind: "LoginSuccess",
+      username: "supershabam"
+    })
+  );
+}, 250);
