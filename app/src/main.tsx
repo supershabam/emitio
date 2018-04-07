@@ -1,151 +1,19 @@
 import * as React from "react";
 import * as ReactDOM from "react-dom";
 import { BrowserRouter as Router, Route, Link } from "react-router-dom";
-import { scaleLinear } from "d3-scale";
-import { axisLeft } from "d3-axis";
-import { select } from "d3-selection";
-import {
-  Observable,
-  Observer,
-  Subject,
-  BehaviorSubject,
-  Subscription,
-  ReplaySubject,
-  from,
-  of,
-  range,
-  empty
-} from "rxjs";
-import {
-  map,
-  catchError,
-  tap,
-  flatMap,
-  startWith,
-  scan,
-  delay,
-  filter,
-  takeUntil,
-  refCount,
-  publish,
-  publishBehavior,
-  shareReplay
-} from "rxjs/operators";
-import { ajax } from "rxjs/ajax";
-import AppBar from "material-ui/AppBar";
-import Button from "material-ui/Button";
-import Drawer from "material-ui/Drawer";
 import { State } from "./state";
-import { Action } from "./actions";
 import { affector } from "./affector";
-import { Provider, connect } from "./context";
-
-type AffectorFn = <S, A>(
-  s: S,
-  a: A,
-  s$: Observable<S>,
-  a$: Observable<A>
-) => [S, Observable<A>];
-
-const affect = (
-  affector: AffectorFn | any,
-  init: State,
-  action$$: Subject<Observable<Action>>
-): Observable<State> => {
-  const state$ = new Observable(observer => {
-    let current = init;
-    const action$ = action$$.pipe(flatMap(a$ => a$));
-    const sub = action$
-      .pipe(
-        map(a => {
-          return affector(current, a, state$, action$);
-        })
-      )
-      .subscribe(tuple => {
-        current = tuple[0];
-        observer.next(current);
-        action$$.next(tuple[1]);
-      });
-    return () => {
-      sub.unsubscribe();
-    };
-  });
-  return state$.pipe(publishBehavior(init), refCount());
-};
+import { Provider, createStore } from "./context";
+import App from "./containers/App";
 
 const init: State = {
   drawer: {
     open: false
   }
 };
-const action$$ = new Subject<Observable<Action>>();
-const state$ = affect(affector, init, action$$);
-const dispatch = (action: Action) => {
-  action$$.next(of(action));
-};
 
-const Title = connect(
-  props => {
-    if (props.username) {
-      return (
-        <h1 onClick={() => props.dispatch({ kind: "Logout" })}>
-          greetings {props.username}
-        </h1>
-      );
-    }
-    return (
-      <h1
-        onClick={() =>
-          props.dispatch({
-            kind: "LoginRequest",
-            username: "supershabam",
-            password: "things"
-          })
-        }
-      >
-        login
-      </h1>
-    );
-  },
-  {
-    username: (state$: Observable<State>) => {
-      return state$.pipe(map((s: State) => s.username));
-    }
-  }
-);
+const { state$, dispatch } = createStore(affector, init);
 
-const App = connect(
-  props => {
-    if (props.username) {
-      return (
-        <h1 onClick={() => props.dispatch({ kind: "Logout" })}>
-          greetings {props.username}
-        </h1>
-      );
-    }
-    return (
-      <div>
-        <h1
-          onClick={() =>
-            props.dispatch({
-              kind: "LoginRequest",
-              username: "supershabam",
-              password: "things"
-            })
-          }
-        >
-          login
-        </h1>
-        <Title />
-      </div>
-    );
-  },
-  {
-    username: (state$: Observable<State>) => {
-      return state$.pipe(map((s: State) => s.username));
-    }
-  }
-);
 ReactDOM.render(
   <Provider value={{ dispatch, state$ }}>
     <App />

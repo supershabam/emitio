@@ -1,9 +1,55 @@
 import * as React from "react";
 import { Action } from "./actions";
 import { State } from "./state";
-import { Observable, Subscription } from "rxjs";
+import { of, Observable, Subject, Subscription } from "rxjs";
+import { map, flatMap, publishBehavior, refCount } from "rxjs/operators";
 
 export const { Provider, Consumer } = React.createContext({});
+
+type AffectorFn = <S, A>(
+  s: S,
+  a: A,
+  s$: Observable<S>,
+  a$: Observable<A>
+) => [S, Observable<A>];
+
+const affect = (
+  affector: AffectorFn | any,
+  init: State,
+  action$$: Subject<Observable<Action>>
+): Observable<State> => {
+  const state$ = new Observable(observer => {
+    let current = init;
+    const action$ = action$$.pipe(flatMap(a$ => a$));
+    const sub = action$
+      .pipe(
+        map(a => {
+          return affector(current, a, state$, action$);
+        })
+      )
+      .subscribe(tuple => {
+        current = tuple[0];
+        observer.next(current);
+        action$$.next(tuple[1]);
+      });
+    return () => {
+      sub.unsubscribe();
+    };
+  });
+  return state$.pipe(publishBehavior(init), refCount());
+};
+
+export const createStore = (affector: AffectorFn | any, init: State) => {
+  const action$$ = new Subject<Observable<Action>>();
+  const state$ = affect(affector, init, action$$);
+  const dispatch = (action: Action) => {
+    action$$.next(of(action));
+  };
+  return {
+    state$,
+    dispatch
+  };
+};
 
 export const connect = (
   WrappedComponent: any,
