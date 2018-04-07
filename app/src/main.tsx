@@ -162,7 +162,6 @@ const connect = (
       this.subs = [];
     }
     componentDidMount() {
-      console.log("component did mount");
       for (let key in mapState$ToProps) {
         this.subs = this.subs.concat([
           mapState$ToProps[key](this.props.store.state$).subscribe(value => {
@@ -171,6 +170,11 @@ const connect = (
             });
           })
         ]);
+      }
+    }
+    componentWillUnmount() {
+      for (let sub of this.subs) {
+        sub.unsubscribe();
       }
     }
     render() {
@@ -184,18 +188,11 @@ const connect = (
     }
   }
   return props => {
-    return (
-      <Consumer>
-        {store => {
-          console.log(store);
-          return <Connect store={store} {...props} />;
-        }}
-      </Consumer>
-    );
+    return <Consumer>{store => <Connect store={store} {...props} />}</Consumer>;
   };
 };
 
-const App = connect(
+const Title = connect(
   props => {
     if (props.username) {
       return (
@@ -225,18 +222,41 @@ const App = connect(
   }
 );
 
+const App = connect(
+  props => {
+    if (props.username) {
+      return (
+        <h1 onClick={() => props.dispatch({ kind: "Logout" })}>
+          greetings {props.username}
+        </h1>
+      );
+    }
+    return (
+      <div>
+        <h1
+          onClick={() =>
+            props.dispatch({
+              kind: "LoginRequest",
+              username: "supershabam",
+              password: "things"
+            })
+          }
+        >
+          login
+        </h1>
+        <Title />
+      </div>
+    );
+  },
+  {
+    username: (state$: Observable<State>) => {
+      return state$.pipe(map((s: State) => s.username));
+    }
+  }
+);
 ReactDOM.render(
   <Provider value={{ dispatch, state$ }}>
     <App />
   </Provider>,
   document.getElementById("app")
 );
-
-setTimeout(() => {
-  action$$.next(
-    of<Action>({
-      kind: "LoginSuccess",
-      username: "supershabam"
-    })
-  );
-}, 250);
