@@ -28,7 +28,8 @@ import {
   takeUntil,
   refCount,
   publish,
-  publishBehavior
+  publishBehavior,
+  shareReplay
 } from "rxjs/operators";
 import { ajax } from "rxjs/ajax";
 
@@ -75,22 +76,23 @@ function affector(
     case "LoginRequest":
       return [
         s,
-        of<Action>({ kind: "LoginSuccess", username: a.username }).pipe(
-          delay(1500),
-          takeUntil(
-            a$.pipe(
-              filter(a => {
-                switch (a.kind) {
-                  case "LoginSuccess":
-                  case "LoginRequest":
-                  case "Logout":
-                    return true;
-                }
-                return false;
-              })
-            )
-          )
-        )
+        empty()
+        // of<Action>({ kind: "LoginSuccess", username: a.username }).pipe(
+        //   delay(1500),
+        //   takeUntil(
+        //     a$.pipe(
+        //       filter(a => {
+        //         switch (a.kind) {
+        //           case "LoginSuccess":
+        //           case "LoginRequest":
+        //           case "Logout":
+        //             return true;
+        //         }
+        //         return false;
+        //       })
+        //     )
+        //   )
+        // )
       ];
     case "LoginSuccess":
       return [{ ...s, username: a.username }, empty()];
@@ -129,7 +131,7 @@ const affect = (
       sub.unsubscribe();
     };
   });
-  return state$;
+  return state$.pipe(publishBehavior(init), refCount());
 };
 
 // const action$$ = new Subject<Observable<Action>>();
@@ -189,6 +191,7 @@ class App extends React.Component<AppProps, State> {
   action$$: Subject<Observable<Action>>;
   state$: Observable<State>;
   sub: Subscription;
+  sub2: Subscription;
   constructor(props: AppProps) {
     super(props);
 
@@ -203,12 +206,21 @@ class App extends React.Component<AppProps, State> {
       console.log("got ur state", state);
       this.setState(state);
     });
+    console.log("subscribing to state again");
+    this.sub2 = this.state$.subscribe(state => {
+      console.log("got ur state again", state);
+    });
     console.log("sending action");
     this.action$$.next(this.props.action$);
   }
 
   componentWillUnmount() {
+    console.log(this.state$);
+
+    console.log("unsubscribing from componetn");
     this.sub.unsubscribe();
+    this.sub2.unsubscribe();
+    console.log(this.state$);
   }
 
   public render() {
@@ -229,6 +241,6 @@ ReactDOM.render(
   document.getElementById("app")
 );
 
-// setTimeout(() => {
-//   ReactDOM.render(<h1>and it gone</h1>, document.getElementById("app"));
-// }, 500);
+setTimeout(() => {
+  ReactDOM.render(<h1>and it gone</h1>, document.getElementById("app"));
+}, 500);
