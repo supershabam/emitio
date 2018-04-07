@@ -32,37 +32,13 @@ import {
   shareReplay
 } from "rxjs/operators";
 import { ajax } from "rxjs/ajax";
+import AppBar from "material-ui/AppBar";
 import Button from "material-ui/Button";
 import Drawer from "material-ui/Drawer";
-
-interface LoginRequest {
-  kind: "LoginRequest";
-  username: string;
-  password: string;
-}
-
-interface LoginSuccess {
-  kind: "LoginSuccess";
-  username: string;
-}
-
-interface LoginError {
-  kind: "LoginError";
-  error: string;
-}
-
-interface Logout {
-  kind: "Logout";
-}
-
-interface State {
-  drawer: {
-    open: boolean;
-  };
-  username?: string;
-}
-
-type Action = LoginRequest | LoginSuccess | LoginError | Logout;
+import { State } from "./state";
+import { Action } from "./actions";
+import { affector } from "./affector";
+import { Provider, connect } from "./context";
 
 type AffectorFn = <S, A>(
   s: S,
@@ -70,42 +46,6 @@ type AffectorFn = <S, A>(
   s$: Observable<S>,
   a$: Observable<A>
 ) => [S, Observable<A>];
-
-function affector(
-  s: State,
-  a: Action,
-  s$: Observable<State>,
-  a$: Observable<Action>
-): [State, Observable<Action>] {
-  console.log("affector", s, a);
-  switch (a.kind) {
-    case "LoginRequest":
-      return [
-        s,
-        of<Action>({ kind: "LoginSuccess", username: a.username }).pipe(
-          delay(1500),
-          takeUntil(
-            a$.pipe(
-              filter(a => {
-                switch (a.kind) {
-                  case "LoginSuccess":
-                  case "LoginRequest":
-                  case "Logout":
-                    return true;
-                }
-                return false;
-              })
-            )
-          )
-        )
-      ];
-    case "LoginSuccess":
-      return [{ ...s, username: a.username }, empty()];
-    case "Logout":
-      return [{ ...s, username: null }, empty()];
-  }
-  return [s, empty()];
-}
 
 const affect = (
   affector: AffectorFn | any,
@@ -142,61 +82,6 @@ const action$$ = new Subject<Observable<Action>>();
 const state$ = affect(affector, init, action$$);
 const dispatch = (action: Action) => {
   action$$.next(of(action));
-};
-
-const { Provider, Consumer } = React.createContext({
-  dispatch,
-  state$
-});
-
-const connect = (
-  WrappedComponent: any,
-  mapState$ToProps?: any,
-  mapDispatchToProps?: any
-) => {
-  interface ConnectProps {
-    store: {
-      dispatch: (a: Action) => null;
-      state$: Observable<State>;
-    };
-  }
-  class Connect extends React.Component<ConnectProps> {
-    static WrappedComponent = WrappedComponent;
-    subs: Array<Subscription>;
-    constructor(props: ConnectProps) {
-      super(props);
-      this.state = {};
-      this.subs = [];
-    }
-    componentDidMount() {
-      for (let key in mapState$ToProps) {
-        this.subs = this.subs.concat([
-          mapState$ToProps[key](this.props.store.state$).subscribe(value => {
-            this.setState(prevState => {
-              return { ...prevState, [key]: value };
-            });
-          })
-        ]);
-      }
-    }
-    componentWillUnmount() {
-      for (let sub of this.subs) {
-        sub.unsubscribe();
-      }
-    }
-    render() {
-      return (
-        <WrappedComponent
-          state$={this.props.store.state$}
-          dispatch={this.props.store.dispatch}
-          {...(this.props, this.state)}
-        />
-      );
-    }
-  }
-  return props => {
-    return <Consumer>{store => <Connect store={store} {...props} />}</Consumer>;
-  };
 };
 
 const Title = connect(
