@@ -77,6 +77,7 @@ function affector(
   s$: Observable<State>,
   a$: Observable<Action>
 ): [State, Observable<Action>] {
+  console.log("affector", s, a);
   switch (a.kind) {
     case "LoginRequest":
       return [
@@ -194,22 +195,39 @@ const connect = (
   };
 };
 
-const App = props => {
-  console.log(props);
-  return (
-    <h1 onClick={() => props.dispatch({ kind: "Logout" })}>{props.username}</h1>
-  );
-};
-
-const WApp = connect(App, {
-  username: (state$: Observable<State>) => {
-    return state$.pipe(map((s: State) => s.username));
+const App = connect(
+  props => {
+    if (props.username) {
+      return (
+        <h1 onClick={() => props.dispatch({ kind: "Logout" })}>
+          greetings {props.username}
+        </h1>
+      );
+    }
+    return (
+      <h1
+        onClick={() =>
+          props.dispatch({
+            kind: "LoginRequest",
+            username: "supershabam",
+            password: "things"
+          })
+        }
+      >
+        login
+      </h1>
+    );
+  },
+  {
+    username: (state$: Observable<State>) => {
+      return state$.pipe(map((s: State) => s.username));
+    }
   }
-});
+);
 
 ReactDOM.render(
   <Provider value={{ dispatch, state$ }}>
-    <WApp />
+    <App />
   </Provider>,
   document.getElementById("app")
 );
