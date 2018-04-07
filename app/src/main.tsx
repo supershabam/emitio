@@ -150,14 +150,21 @@ const { Provider, Consumer } = React.createContext({
 });
 
 const connect = (
-  WrappedComponent: React.Component<any, any>,
-  mapState$ToProps?: any
+  WrappedComponent: any,
+  mapState$ToProps?: any,
+  mapDispatchToProps?: any
 ) => {
-  class Connect<any, any> extends React.Component {
+  interface ConnectProps {
+    store: {
+      dispatch: (a: Action) => null;
+      state$: Observable<State>;
+    };
+  }
+  class Connect extends React.Component<ConnectProps> {
     static WrappedComponent = WrappedComponent;
     subs: Array<Subscription>;
-    constructor(props, context) {
-      super(props, context);
+    constructor(props: ConnectProps) {
+      super(props);
       this.state = {};
       this.subs = [];
     }
