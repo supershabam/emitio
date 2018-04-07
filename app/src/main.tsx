@@ -1,6 +1,9 @@
 import * as React from "react";
 import * as ReactDOM from "react-dom";
 import { BrowserRouter as Router, Route, Link } from "react-router-dom";
+import { scaleLinear } from "d3-scale";
+import { axisLeft } from "d3-axis";
+import { select } from "d3-selection";
 import {
   Observable,
   Observer,
@@ -138,6 +141,50 @@ interface AppProps {
   action$: Observable<Action>;
 }
 
+class Heatmap extends React.Component<null, null> {
+  svg: any;
+
+  constructor(props) {
+    super(props);
+    this.svg = React.createRef();
+  }
+
+  componentDidMount() {
+    const scale = scaleLinear();
+    const axis = axisLeft(scale).tickSize(100);
+    select(this.svg.current)
+      .append("g")
+      .attr("transform", "translate(0,100)")
+      .call(axis);
+
+    console.log("scale", scale);
+    console.log("axis", axis);
+    // const axis = d3.axisLeft(scale);
+  }
+
+  render() {
+    return (
+      <div className="svg-container">
+        <svg
+          version="1.1"
+          viewBox="0 0 100 100"
+          preserveAspectRatio="xMinYMin meet"
+          className="svg-content"
+          transform="translate(0, -100)"
+        >
+          <svg
+            width="100"
+            height="100"
+            version="1.1"
+            className="svg-content"
+            ref={this.svg}
+          />
+        </svg>
+      </div>
+    );
+  }
+}
+
 class App extends React.Component<AppProps, State> {
   action$$: Subject<Observable<Action>>;
   state$: Observable<State>;
@@ -165,10 +212,7 @@ class App extends React.Component<AppProps, State> {
   }
 
   public render() {
-    if (this.state.username) {
-      return <h1>hello + {this.state.username}</h1>;
-    }
-    return <h1>greetings</h1>;
+    return <Heatmap />;
   }
 }
 
@@ -185,6 +229,6 @@ ReactDOM.render(
   document.getElementById("app")
 );
 
-setTimeout(() => {
-  ReactDOM.render(<h1>and it gone</h1>, document.getElementById("app"));
-}, 500);
+// setTimeout(() => {
+//   ReactDOM.render(<h1>and it gone</h1>, document.getElementById("app"));
+// }, 500);
