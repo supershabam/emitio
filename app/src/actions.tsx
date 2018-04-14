@@ -6,7 +6,8 @@ interface LoginRequest {
 
 interface LoginSuccess {
   kind: "LoginSuccess";
-  username: string;
+  id: string;
+  name: string;
 }
 
 interface LoginError {
@@ -25,4 +26,20 @@ interface State {
   username?: string;
 }
 
-export type Action = LoginRequest | LoginSuccess | LoginError | Logout;
+interface RefreshServicesRequest {
+  kind: "RefreshServicesRequest";
+  userID: string;
+}
+
+interface RefreshServicesSuccess {
+  kind: "RefreshServicesSuccess";
+  services?: string[];
+}
+
+export type Action =
+  | LoginRequest
+  | LoginSuccess
+  | LoginError
+  | Logout
+  | RefreshServicesRequest
+  | RefreshServicesSuccess;

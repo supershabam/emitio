@@ -1,6 +1,7 @@
 export interface State {
-  drawer: {
-    open: boolean;
+  user?: {
+    id: string;
+    name: string;
+    services?: string[];
   };
-  username?: string;
 }

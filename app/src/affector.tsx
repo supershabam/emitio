@@ -15,7 +15,11 @@ export function affector(
     case "LoginRequest":
       return [
         s,
-        of<Action>({ kind: "LoginSuccess", username: a.username }).pipe(
+        of<Action>({
+          kind: "LoginSuccess",
+          name: a.username,
+          id: "12345"
+        }).pipe(
           delay(1500),
           takeUntil(
             a$.pipe(
@@ -33,9 +37,9 @@ export function affector(
         )
       ];
     case "LoginSuccess":
-      return [{ ...s, username: a.username }, empty()];
+      return [{ ...s, user: { name: a.name, id: a.id } }, empty()];
     case "Logout":
-      return [{ ...s, username: null }, empty()];
+      return [{ ...s, user: null }, empty()];
   }
   return [s, empty()];
 }
