@@ -4,12 +4,17 @@ import { Action } from "./actions";
 import { Observable, empty, of } from "rxjs";
 import { delay, filter, takeUntil } from "rxjs/operators";
 
+let count = 0;
+
 export function affector(
   s: State,
   a: Action,
   s$: Observable<State>,
   a$: Observable<Action>
 ): [State, Observable<Action>] {
+  if (count++ === 0) {
+    s$.subscribe(state => console.log("state", state));
+  }
   console.log("affector", s, a);
   switch (a.kind) {
     case "LoginRequest":
@@ -48,7 +53,10 @@ export function affector(
         { ...s, service: { ...s.service, refreshing: true } },
         of<Action>({
           kind: "RefreshServicesSuccess",
-          services: ["prod-nginx", "prod-edge"]
+          services: [
+            { id: "2", name: "prod-nginx" },
+            { id: "83", name: "prod-edge" }
+          ]
         }).pipe(
           delay(400),
           takeUntil(
@@ -60,19 +68,75 @@ export function affector(
           )
         )
       ];
-    case "RefreshServicesSuccess":
-      return [
-        {
-          ...s,
-          service: { ...s.service, refreshing: false, services: a.services }
-        },
-        empty()
-      ];
+    case "RefreshServicesSuccess": {
+      let next: State = {
+        ...s,
+        service: { ...s.service, refreshing: false, services: a.services }
+      };
+      return [next, empty()];
+    }
     case "SelectService":
+      let next: State = {
+        ...s,
+        service: {
+          ...s.service,
+          selected: {
+            service: a.service,
+            refreshingColumns: true,
+            columns: []
+          }
+        }
+      };
       return [
-        { ...s, service: { ...s.service, selected: a.selected } },
-        empty()
+        next,
+        of<Action>({
+          kind: "RefreshColumnsRequest",
+          userID: s.user.id,
+          serviceID: next.service.selected.service.id
+        })
       ];
+    case "RefreshColumnsRequest": {
+      return [
+        s,
+        of<Action>({
+          kind: "RefreshColumnsSuccess",
+          columns: [
+            {
+              kind: "NumericColumn",
+              field: "response_time"
+            }
+          ]
+        })
+      ];
+    }
+    case "RefreshColumnsSuccess": {
+      let next: State = {
+        ...s,
+        service: {
+          ...s.service,
+          selected: {
+            ...s.service.selected,
+            refreshingColumns: false,
+            calculate: undefined,
+            columns: a.columns
+          }
+        }
+      };
+      return [next, empty()];
+    }
+    case "SelectCalculateColumn": {
+      let next: State = {
+        ...s,
+        service: {
+          ...s.service,
+          selected: {
+            ...s.service.selected,
+            calculate: a.column
+          }
+        }
+      };
+      return [next, empty()];
+    }
   }
   return [s, empty()];
 }

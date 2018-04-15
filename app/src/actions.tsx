@@ -1,3 +1,5 @@
+import { Service, Column } from "./state";
+
 interface LoginRequest {
   kind: "LoginRequest";
   username: string;
@@ -26,6 +28,22 @@ interface State {
   username?: string;
 }
 
+interface RefreshColumnsRequest {
+  kind: "RefreshColumnsRequest";
+  userID: string;
+  serviceID: string;
+}
+
+interface RefreshColumnsSuccess {
+  kind: "RefreshColumnsSuccess";
+  columns: Column[];
+}
+
+interface SelectCalculateColumn {
+  kind: "SelectCalculateColumn";
+  column: Column;
+}
+
 interface RefreshServicesRequest {
   kind: "RefreshServicesRequest";
   userID: string;
@@ -33,12 +51,12 @@ interface RefreshServicesRequest {
 
 interface RefreshServicesSuccess {
   kind: "RefreshServicesSuccess";
-  services?: string[];
+  services?: Service[];
 }
 
 interface SelectService {
   kind: "SelectService";
-  selected: string;
+  service: Service;
 }
 
 export type Action =
@@ -48,4 +66,7 @@ export type Action =
   | Logout
   | RefreshServicesRequest
   | RefreshServicesSuccess
-  | SelectService;
+  | SelectService
+  | RefreshColumnsRequest
+  | RefreshColumnsSuccess
+  | SelectCalculateColumn;
