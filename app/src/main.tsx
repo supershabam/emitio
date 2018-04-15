@@ -8,7 +8,11 @@ import { Provider, createStore } from "./context";
 import App from "./containers/App";
 
 const init: State = {
-  user: null
+  user: null,
+  service: {
+    refreshing: false,
+    services: ["prod-edge", "customer-api"]
+  }
 };
 
 const { state$, dispatch } = createStore(affector, init);
