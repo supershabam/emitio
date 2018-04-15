@@ -1,21 +1,35 @@
 import * as React from "react";
 import * as ReactDOM from "react-dom";
-import * as Reglaze from "reglaze";
+import { connect, createContext } from "reglaze";
 import { BrowserRouter as Router } from "react-router-dom";
 import { State } from "./state";
 import { affector } from "./affector";
-import { Provider, createStore } from "./context";
 import App from "./containers/App";
+import { of } from "rxjs";
+import { Action } from "./actions";
 
 const init: State = {
-  user: null
+  user: null,
+  service: {
+    refreshing: false,
+    services: []
+  }
 };
 
-const { state$, dispatch } = createStore(affector, init);
+const { Provider } = createContext(
+  "main",
+  affector,
+  init,
+  of<Action>({
+    kind: "LoginRequest",
+    username: "supershabam",
+    password: "poop"
+  })
+);
 
 ReactDOM.render(
   <Router>
-    <Provider value={{ dispatch, state$ }}>
+    <Provider>
       <App />
     </Provider>
   </Router>,

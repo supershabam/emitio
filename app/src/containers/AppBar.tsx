@@ -10,7 +10,7 @@ import MenuIcon from "material-ui-icons/Menu";
 import { Observable } from "rxjs";
 import { State } from "../state";
 import { map } from "rxjs/operators";
-import { connect } from "../context";
+import { connect } from "reglaze";
 
 const styles = {
   root: {
@@ -72,7 +72,7 @@ function ButtonAppBar(props) {
   );
 }
 
-export default connect(withStyles(styles)(ButtonAppBar), {
+export default connect("main", withStyles(styles)(ButtonAppBar), {
   username: (state$: Observable<State>) => {
     return state$.pipe(
       map((state: State) => {

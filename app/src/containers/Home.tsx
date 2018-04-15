@@ -1,7 +1,11 @@
 import * as React from "react";
+import { Action } from "../actions";
+import ServiceSelectDropdown from "./ServiceSelectDropdown";
 
-const Home = () => {
-  return <h1>home</h1>;
+interface HomeProps {}
+
+const Home = (props: HomeProps) => {
+  return <ServiceSelectDropdown />;
 };
 
 export default Home;

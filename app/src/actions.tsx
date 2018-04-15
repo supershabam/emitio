@@ -36,10 +36,16 @@ interface RefreshServicesSuccess {
   services?: string[];
 }
 
+interface SelectService {
+  kind: "SelectService";
+  selected: string;
+}
+
 export type Action =
   | LoginRequest
   | LoginSuccess
   | LoginError
   | Logout
   | RefreshServicesRequest
-  | RefreshServicesSuccess;
+  | RefreshServicesSuccess
+  | SelectService;
