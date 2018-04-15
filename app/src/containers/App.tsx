@@ -9,41 +9,12 @@ import { Action } from "../actions";
 import Home from "./home";
 import AppBar from "./AppBar";
 
-const ConnectedHome = connect(
-  "main",
-  Home,
-  {
-    selected: ($state: Observable<State>): Observable<string> => {
-      return $state.pipe(
-        map((state: State): string => {
-          if (state.service.selected) {
-            return state.service.selected;
-          }
-          return "";
-        })
-      );
-    },
-    services: ($state: Observable<State>): Observable<string[]> => {
-      return $state.pipe(
-        map((state: State): string[] => {
-          return state.service.services;
-        })
-      );
-    }
-  },
-  {
-    select: (selected: string): Action => {
-      return { kind: "SelectService", selected };
-    }
-  }
-);
-
 const App = props => {
   return (
     <CssBaseline>
       <div>
         <Switch>
-          <Route path="/" exact component={ConnectedHome} />
+          <Route path="/" exact component={Home} />
           <Route component={() => <h2>no match</h2>} />
         </Switch>
       </div>

@@ -5,17 +5,27 @@ import { BrowserRouter as Router } from "react-router-dom";
 import { State } from "./state";
 import { affector } from "./affector";
 import App from "./containers/App";
-import { Observable } from "indefinite-observable";
+import { of } from "rxjs";
+import { Action } from "./actions";
 
 const init: State = {
   user: null,
   service: {
     refreshing: false,
-    services: ["prod-edge", "customer-api"]
+    services: []
   }
 };
 
-const { Provider } = createContext("main", affector, init);
+const { Provider } = createContext(
+  "main",
+  affector,
+  init,
+  of<Action>({
+    kind: "LoginRequest",
+    username: "supershabam",
+    password: "poop"
+  })
+);
 
 ReactDOM.render(
   <Router>
