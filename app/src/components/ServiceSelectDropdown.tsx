@@ -17,19 +17,16 @@ const ServiceSelectDropdown = (props: ServiceSelectDropdownProps) => {
       </option>
     );
   });
-  console.log("props", props);
+  console.log(selected, value);
   return (
-    <form>
-      <select
-        value={value}
-        onChange={(event: any) => {
-          console.log("change", event);
-          select(event.target.value);
-        }}
-      >
-        {options}
-      </select>
-    </form>
+    <Select
+      value={value}
+      onClick={(event: any) => {
+        select(event.target.value);
+      }}
+    >
+      {options}
+    </Select>
   );
 };
 

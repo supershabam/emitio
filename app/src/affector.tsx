@@ -40,6 +40,11 @@ export function affector(
       return [{ ...s, user: { name: a.name, id: a.id } }, empty()];
     case "Logout":
       return [{ ...s, user: null }, empty()];
+    case "SelectService":
+      return [
+        { ...s, service: { ...s.service, selected: a.selected } },
+        empty()
+      ];
   }
   return [s, empty()];
 }

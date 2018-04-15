@@ -10,9 +10,11 @@ interface HomeProps {
 
 const Home = (props: HomeProps) => {
   const { services, selected, select } = props;
+  console.log("home props", props);
   return (
     <ServiceSelectDropdown
       services={services}
+      selected={selected}
       select={(service: string): void => {
         select(service);
       }}

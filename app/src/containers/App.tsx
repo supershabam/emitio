@@ -3,13 +3,14 @@ import { Route, Switch } from "react-router-dom";
 import CssBaseline from "material-ui/CssBaseline";
 import { Observable } from "rxjs";
 import { map } from "rxjs/operators";
-import { connect } from "../context";
+import { connect } from "reglaze";
 import { State } from "../state";
 import { Action } from "../actions";
 import Home from "./home";
 import AppBar from "./AppBar";
 
 const ConnectedHome = connect(
+  "main",
   Home,
   {
     selected: ($state: Observable<State>): Observable<string> => {
@@ -32,7 +33,6 @@ const ConnectedHome = connect(
   },
   {
     select: (selected: string): Action => {
-      console.log("select called");
       return { kind: "SelectService", selected };
     }
   }

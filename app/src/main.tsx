@@ -1,11 +1,11 @@
 import * as React from "react";
 import * as ReactDOM from "react-dom";
-import * as Reglaze from "reglaze";
+import { connect, createContext } from "reglaze";
 import { BrowserRouter as Router } from "react-router-dom";
 import { State } from "./state";
 import { affector } from "./affector";
-import { Provider, createStore } from "./context";
 import App from "./containers/App";
+import { Observable } from "indefinite-observable";
 
 const init: State = {
   user: null,
@@ -15,11 +15,11 @@ const init: State = {
   }
 };
 
-const { state$, dispatch } = createStore(affector, init);
+const { Provider } = createContext("main", affector, init);
 
 ReactDOM.render(
   <Router>
-    <Provider value={{ dispatch, state$ }}>
+    <Provider>
       <App />
     </Provider>
   </Router>,
